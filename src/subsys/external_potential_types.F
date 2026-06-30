@@ -2383,6 +2383,7 @@ CONTAINS
       alpha_core_charge = alpha
       ccore_charge = zeff*SQRT((alpha/pi)**3)
 
+
       CALL set_all_potential(potential, &
                              name=name, &
                              alpha_core_charge=alpha_core_charge, &
