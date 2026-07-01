@@ -93,6 +93,7 @@ MODULE qs_environment
         do_method_gapw, do_method_gapw_xc, do_method_gpw, do_method_lrigpw, do_method_mndo, &
         do_method_mndod, do_method_ofgpw, do_method_pdg, do_method_pm3, do_method_pm6, &
         do_method_pm6fm, do_method_pnnl, do_method_rigpw, do_method_rm1, do_method_xtb, &
+        do_method_ridft, &
         do_qmmm_gauss, do_qmmm_swave, general_roks, hden_atomic, kg_tnadd_embed_ri, rel_none, &
         rel_trans_atom, vdw_pairpot_dftd2, vdw_pairpot_dftd3, vdw_pairpot_dftd3bj, &
         vdw_pairpot_dftd4, wfi_aspc_nr, wfi_linear_ps_method_nr, wfi_linear_wf_method_nr, &
@@ -1372,6 +1373,7 @@ CONTAINS
           dft_control%qs_control%method_id == do_method_gapw_xc .OR. &
           dft_control%qs_control%method_id == do_method_lrigpw .OR. &
           dft_control%qs_control%method_id == do_method_rigpw .OR. &
+          dft_control%qs_control%method_id == do_method_ridft .OR. &
           dft_control%qs_control%method_id == do_method_ofgpw) THEN
          ALLOCATE (dispersion_env)
          NULLIFY (xc_section)

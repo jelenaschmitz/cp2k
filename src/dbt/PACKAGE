@@ -9,5 +9,5 @@
         "../mpiwrap",
         "../offload",
     ],
-    "public": ["dbt_api.F"],
+    "public": ["dbt_api.F", "dbt_io.F"],
 }

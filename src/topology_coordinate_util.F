@@ -124,12 +124,15 @@ CONTAINS
       TYPE(molecule_kind_type), POINTER                  :: molecule_kind
       TYPE(molecule_type), POINTER                       :: molecule
       TYPE(section_vals_type), POINTER                   :: exclude_section, topology_section
+      LOGICAL :: ignore_cell_size_limits
 
       NULLIFY (logger)
       logger => cp_get_default_logger()
       iw = cp_print_key_unit_nr(logger, subsys_section, "PRINT%TOPOLOGY_INFO/UTIL_INFO", &
                                 extension=".subsysLog")
       topology_section => section_vals_get_subs_vals(subsys_section, "TOPOLOGY")
+      CALL section_vals_val_get(topology_section, &
+                                "IGNORE_CELL_SIZE_LIMITS", l_val=ignore_cell_size_limits)
       CALL timeset(routineN, handle)
 
       my_qmmm = .FALSE.
@@ -335,7 +338,12 @@ CONTAINS
             check = check .AND. (dims(i) < cdims(i))
          END IF
       END DO
-      my_ignore_outside_box = .FALSE.
+      my_ignore_outside_box = ignore_cell_size_limits
+      IF (my_ignore_outside_box) &
+         PRINT *, 'Warning! You turned on that the program ignores if elements/part '// &
+                  'of your system are outside the Cell given in subsystem! '// &
+                  'This can lead to wriong results and is only intended '// &
+                  'to be paired with RIDFT and partial charges outside the cell. '
       IF (PRESENT(ignore_outside_box)) my_ignore_outside_box = ignore_outside_box
       IF (.NOT. my_ignore_outside_box .AND. .NOT. check) &
          CALL cp_abort(__LOCATION__, &

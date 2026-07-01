@@ -1752,6 +1752,13 @@ CONTAINS
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
+      CALL keyword_create(keyword, __LOCATION__, name="IGNORE_CELL_SIZE_LIMITS", &
+                          description="Stops the check if elements are outside the CELL sizes.", &
+                          usage="IGNORE_CELL_SIZE_LIMITS logical", &
+                          default_l_val=.FALSE., lone_keyword_l_val=.TRUE.)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
       CALL cp_print_key_section_create(print_key, __LOCATION__, "DUMP_PDB", &
                                        description="controls the dumping of the PDB at the starting geometry", &
                                        print_level=debug_print_level, filename="dump")

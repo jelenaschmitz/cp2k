@@ -47,8 +47,10 @@ MODULE qs_neighbor_lists
                                               gth_potential_type,&
                                               sgp_potential_type
    USE input_constants,                 ONLY: &
-        dispersion_uff, do_method_lrigpw, do_method_rigpw, do_potential_id, &
-        do_potential_mix_cl_trunc, do_potential_short, do_potential_truncated, do_se_IS_slater, &
+        dispersion_uff, do_method_lrigpw, do_method_rigpw,&
+        do_method_ridft, &
+        do_potential_id, do_potential_mix_cl_trunc, &
+      do_potential_short, do_potential_truncated, do_se_IS_slater, &
         vdw_pairpot_dftd4, xc_vdw_fun_pairpot
    USE input_section_types,             ONLY: section_vals_get,&
                                               section_vals_get_subs_vals,&
@@ -298,7 +300,7 @@ CONTAINS
                                                             maxatom, ngp, nkind, zat
       LOGICAL :: all_potential_present, almo, cneo_potential_present, dftb, do_hfx, dokp, &
          gth_potential_present, lri_optbas, lrigpw, mic, molecule_only, nddo, paw_atom, &
-         paw_atom_present, rigpw, sgp_potential_present, xtb
+         paw_atom_present, rigpw, sgp_potential_present, xtb, ridft
       LOGICAL, ALLOCATABLE, DIMENSION(:) :: all_present, aux_fit_present, aux_present, &
          cneo_present, core_present, default_present, nonbond1_atom, nonbond2_atom, oce_present, &
          orb_present, ppl_present, ppnl_present, ri_present, xb1_atom, xb2_atom
@@ -420,6 +422,7 @@ CONTAINS
       almo = dft_control%qs_control%do_almo_scf
       lrigpw = (dft_control%qs_control%method_id == do_method_lrigpw)
       rigpw = (dft_control%qs_control%method_id == do_method_rigpw)
+      ridft = (dft_control%qs_control%method_id == do_method_ridft)
       lri_optbas = dft_control%qs_control%lri_optbas
 
       ! molecular lists

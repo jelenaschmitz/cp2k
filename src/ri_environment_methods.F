@@ -396,6 +396,7 @@ CONTAINS
       ! reassign avec
       avec => lri_env%ri_fit%avec
       bas_ptr => lri_env%ri_fit%bas_ptr
+      !Comment out for rigpw
       ALLOCATE (atom_of_kind(natom), kind_of(natom))
       CALL get_atomic_kind_set(atomic_kind_set, atom_of_kind=atom_of_kind, kind_of=kind_of)
       DO ispin = 1, nspin

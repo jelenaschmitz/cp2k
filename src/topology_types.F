@@ -174,6 +174,7 @@ MODULE topology_types
       LOGICAL                                   :: charge_beta = .FALSE.
       LOGICAL                                   :: charge_extended = .FALSE.
       LOGICAL                                   :: para_res = .FALSE.
+      LOGICAL                                   :: ignore_cell_size_limits = .FALSE.
    END TYPE topology_parameters_type
 
 ! **************************************************************************************************
@@ -246,6 +247,7 @@ CONTAINS
       topology%aa_element = .FALSE.
       topology%exclude_vdw = do_skip_13
       topology%exclude_ei = do_skip_13
+      topology%ignore_cell_size_limits = .FALSE. 
       !-----------------------------------------------------------------------------
       ! 3. Initialize and Nullify things in topology%atom_info
       !-----------------------------------------------------------------------------

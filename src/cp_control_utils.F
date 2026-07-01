@@ -47,7 +47,8 @@ MODULE cp_control_utils
         do_admm_purify_mcweeny, do_admm_purify_mo_diag, do_admm_purify_mo_no_diag, &
         do_admm_purify_none, do_admm_purify_none_dm, do_ddapc_constraint, do_ddapc_restraint, &
         do_method_am1, do_method_dftb, do_method_gapw, do_method_gapw_xc, do_method_gpw, &
-        do_method_lrigpw, do_method_mndo, do_method_mndod, do_method_ofgpw, do_method_pdg, &
+        do_method_lrigpw, do_method_ridft, &
+        do_method_mndo, do_method_mndod, do_method_ofgpw, do_method_pdg, &
         do_method_pm3, do_method_pm6, do_method_pm6fm, do_method_pnnl, do_method_rigpw, &
         do_method_rm1, do_method_xtb, do_pwgrid_ns_fullspace, do_pwgrid_ns_halfspace, &
         do_pwgrid_spherical, do_s2_constraint, do_s2_restraint, do_se_is_kdso, do_se_is_kdso_d, &
@@ -1009,6 +1010,7 @@ CONTAINS
       qs_control%ofgpw = .FALSE.
       qs_control%lrigpw = .FALSE.
       qs_control%rigpw = .FALSE.
+      qs_control%ridft = .FALSE.
       SELECT CASE (qs_control%method_id)
       CASE (do_method_gapw)
          CALL cite_reference(Lippert1999)
@@ -1026,6 +1028,8 @@ CONTAINS
          qs_control%lrigpw = .TRUE.
       CASE (do_method_rigpw)
          qs_control%rigpw = .TRUE.
+      CASE (do_method_ridft)
+         qs_control%ridft = .TRUE.
       CASE (do_method_dftb)
          qs_control%dftb = .TRUE.
          CALL cite_reference(Porezag1995)

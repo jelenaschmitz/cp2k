@@ -60,7 +60,6 @@ MODULE rt_bse_types
                                   copy_fm_to_dbcsr
    USE qs_mo_types, ONLY: mo_set_type
    USE basis_set_types, ONLY: gto_basis_set_p_type
-   USE basis_set_types, ONLY: gto_basis_set_p_type
    USE cp_control_types, ONLY: dft_control_type
    USE qs_environment_types, ONLY: qs_environment_type, &
                                    get_qs_env
@@ -95,6 +94,7 @@ MODULE rt_bse_types
                                   section_vals_get, &
                                   section_vals_val_get, &
                                   section_vals_get_subs_vals
+   USE rt_bse_utils, ONLY: create_hartree_ri_3c
 
 #include "../base/base_uses.f90"
 
@@ -111,7 +111,6 @@ MODULE rt_bse_types
              release_rtbse_env, &
              multiply_cfm_fm, &
              multiply_fm_cfm, &
-             create_hartree_ri_3c, &
              create_sigma_workspace_qs_only
 
    ! Created so that we can have an array of pointers to arrays
@@ -696,97 +695,6 @@ CONTAINS
                                 bs_env%basis_set_AO, bs_env%basis_set_RI, bs_env%i_RI_start_from_atom, &
                                 bs_env%ri_metric, qs_env, rtbse_env%unit_nr)
    END SUBROUTINE create_hartree_ri_workspace
-! **************************************************************************************************
-!> \brief Separated method for allocating the 3c integrals for RI Hartree
-!> \note RI method calculates the Hartree contraction without the use of DBT, as it cannot emulate vectors
-!> \param rho_dbcsr matrix used for the description of shape of 3c array
-!> \param int_3c 3-center integral array to be allocated and filled
-!> \param n_ao Number of atomic orbitals
-!> \param n_RI Number of auxiliary RI orbitals
-!> \param basis_set_AO AO basis set
-!> \param basis_set_RI RI auxiliary basis set
-!> \param i_RI_start_from_atom Array of indices where functions of a given atom in RI basis start
-!> \param unit_nr Unit number used for printing information about the size of int_3c
-!> \author Stepan Marek
-!> \date 01.2025
-! **************************************************************************************************
-   SUBROUTINE create_hartree_ri_3c(rho_dbcsr, int_3c, n_ao, n_RI, basis_set_AO, basis_set_RI, &
-                                   i_RI_start_from_atom, ri_metric, qs_env, unit_nr)
-      TYPE(dbcsr_type)                                  :: rho_dbcsr
-      REAL(kind=dp), DIMENSION(:, :, :), POINTER          :: int_3c
-      INTEGER                                           :: n_ao, n_RI
-      TYPE(gto_basis_set_p_type), DIMENSION(:)          :: basis_set_AO, &
-                                                           basis_set_RI
-      INTEGER, DIMENSION(:)                             :: i_RI_start_from_atom
-      TYPE(libint_potential_type)                       :: ri_metric
-      TYPE(qs_environment_type), POINTER                :: qs_env
-      INTEGER                                           :: unit_nr
-      REAL(kind=dp)                                     :: size_mb
-      INTEGER                                           :: nblkrows_local, &
-                                                           nblkcols_local, &
-                                                           i_blk_local, &
-                                                           j_blk_local, &
-                                                           nrows_local, &
-                                                           ncols_local, &
-                                                           col_local_offset, &
-                                                           row_local_offset, &
-                                                           start_col_index, &
-                                                           end_col_index, &
-                                                           start_row_index, &
-                                                           end_row_index
-      INTEGER, DIMENSION(:), POINTER                    :: local_blk_rows, &
-                                                           local_blk_cols, &
-                                                           row_blk_size, &
-                                                           col_blk_size
-      ! TODO : Implement option/decision to not precompute all the 3c integrals
-      size_mb = REAL(n_ao, kind=dp)*REAL(n_ao, kind=dp)*REAL(n_RI, kind=dp)* &
-                REAL(STORAGE_SIZE(size_mb), kind=dp)/8.0_dp/1024.0_dp/1024.0_dp
-      IF (unit_nr > 0) WRITE (unit_nr, '(A44,E32.2E3,A4)') &
-         " RTBSE| Approximate size of the 3c integrals", size_mb, " MiB"
-
-      ! Get the number of block rows and columns
-      CALL dbcsr_get_info(rho_dbcsr, nblkrows_local=nblkrows_local, nblkcols_local=nblkcols_local)
-      ! Get the global indices of local rows and columns
-      CALL dbcsr_get_info(rho_dbcsr, local_rows=local_blk_rows, local_cols=local_blk_cols)
-      ! Get the sizes of all blocks
-      CALL dbcsr_get_info(rho_dbcsr, row_blk_size=row_blk_size, col_blk_size=col_blk_size)
-
-      ! Get the total required local rows and cols
-      nrows_local = 0
-      DO i_blk_local = 1, nblkrows_local
-         nrows_local = nrows_local + row_blk_size(local_blk_rows(i_blk_local))
-      END DO
-      ncols_local = 0
-      DO j_blk_local = 1, nblkcols_local
-         ncols_local = ncols_local + col_blk_size(local_blk_cols(j_blk_local))
-      END DO
-
-      ! Allocate the appropriate storage
-      ALLOCATE (int_3c(nrows_local, ncols_local, n_RI))
-
-      ! Fill the storage with appropriate values, block by block
-      row_local_offset = 1
-      DO i_blk_local = 1, nblkrows_local
-         col_local_offset = 1
-         DO j_blk_local = 1, nblkcols_local
-            start_row_index = row_local_offset
-            end_row_index = start_row_index + row_blk_size(local_blk_rows(i_blk_local)) - 1
-            start_col_index = col_local_offset
-            end_col_index = start_col_index + col_blk_size(local_blk_cols(j_blk_local)) - 1
-            CALL build_3c_integral_block(int_3c(start_row_index:end_row_index, &
-                                                start_col_index:end_col_index, &
-                                                1:n_RI), &
-                                         qs_env, potential_parameter=ri_metric, &
-                                         basis_j=basis_set_AO, basis_k=basis_set_AO, &
-                                         basis_i=basis_set_RI, &
-                                         atom_j=local_blk_rows(i_blk_local), &
-                                         atom_k=local_blk_cols(j_blk_local), &
-                                         i_bf_start_from_atom=i_RI_start_from_atom)
-            col_local_offset = col_local_offset + col_blk_size(local_blk_cols(j_blk_local))
-         END DO
-         row_local_offset = row_local_offset + row_blk_size(local_blk_rows(i_blk_local))
-      END DO
-   END SUBROUTINE create_hartree_ri_3c
 ! **************************************************************************************************
 !> \brief Releases the workspace for the Hartree RI method
 !> \param rtbse_env RT-BSE Environment, containing specific RI Hartree storage
