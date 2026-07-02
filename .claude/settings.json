@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "ask": [
+      "Write",
+      "Edit",
+      "NotebookEdit",
+      "Bash(git push:*)"
+    ]
+  }
+}
