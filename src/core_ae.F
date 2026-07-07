@@ -553,6 +553,9 @@ CONTAINS
       CHARACTER(LEN=*), INTENT(IN)                       :: basis_type
 
       CHARACTER(LEN=*), PARAMETER :: routineN = 'build_core_erf_ridft'
+      ! Effectively-infinite screening radius used for basis-less GTH point charges: the
+      ! bare 1/r Coulomb does not decay, so it must not be screened by a finite core radius.
+      REAL(KIND=dp), PARAMETER :: point_charge_radius = 1.0E4_dp
 
       INTEGER                                            :: handle, iatom, icol, ikind, img, &
                                                             irow, iset, jatom, jkind, jset, katom, &
@@ -565,9 +568,9 @@ CONTAINS
                                                             npgfb, nsgfa, nsgfb
       INTEGER, DIMENSION(:, :), POINTER                  :: first_sgfa, first_sgfb
       LOGICAL                                            :: dokp, found
-      REAL(KIND=dp)                                      :: alpha_ab_nn, alpha_c, core_charge, &
+      REAL(KIND=dp)                                      :: alpha_ab_nn, alpha_c, cerf_c, core_charge, &
                                                             core_radius, dab, dab_nn, dac, dbc, e_img, &
-                                                            rab2, rac2, rbc2, zeta_c
+                                                            rab2, rac2, rbc2, screen_radius, zc_c, zeta_c
       REAL(KIND=dp), DIMENSION(3)                        :: rab_nn
       REAL(KIND=dp), ALLOCATABLE, DIMENSION(:)           :: alpha_nn, ff, z_nn
       REAL(KIND=dp), ALLOCATABLE, DIMENSION(:, :)        :: work
@@ -704,6 +707,26 @@ CONTAINS
                CYCLE
             END IF
 
+            ! Default: keep verfc's smooth erf block (-core_charge*verf = -Z*erf(sqrt(a)r)/r),
+            ! screened by the core's own charge radius. This is unchanged for all-electron,
+            ! sgp and orbital-bearing GTH kinds.
+            zc_c = 0.0_dp
+            cerf_c = -core_charge
+            screen_radius = core_radius
+            ! A basis-less GTH kind carries a partial charge but has no orbitals of its own
+            ! (the "fake H core" used to embed a classical point charge). Its erf core is the
+            ! FULL long-range electron-nucleus interaction, but on sac_ppl with core_radius=0
+            ! that long-range term is truncated. Treat it instead as a bare 1/r point charge:
+            ! keep verfc's vnuc block (-zeff*vnuc = -Z/r) and disable the short-range core
+            ! screen so the non-decaying 1/r reaches every overlapping orbital pair.
+            IF (ASSOCIATED(gth_potential)) THEN
+               IF (.NOT. ASSOCIATED(basis_set_list(kkind)%gto_basis_set)) THEN
+                  zc_c = zeta_c
+                  cerf_c = 0.0_dp
+                  screen_radius = point_charge_radius
+               END IF
+            END IF
+
             CALL nl_set_sub_iterator(iter, ikind, kkind, iatom)
 
             DO WHILE (nl_sub_iterate(iter) == 0)
@@ -714,11 +737,11 @@ CONTAINS
                dbc = SQRT(SUM(rbc*rbc))
 
                DO iset = 1, nseta
-                  IF (set_radius_a(iset) + core_radius < dac) CYCLE
+                  IF (set_radius_a(iset) + screen_radius < dac) CYCLE
                   ncoa = npgfa(iset)*ncoset(la_max(iset))
                   sgfa = first_sgfa(1, iset)
                   DO jset = 1, nsetb
-                     IF (set_radius_b(jset) + core_radius < dbc) CYCLE
+                     IF (set_radius_b(jset) + screen_radius < dbc) CYCLE
                      ncob = npgfb(jset)*ncoset(lb_max(jset))
                      sgfb = first_sgfb(1, jset)
                      IF (set_radius_a(iset) + set_radius_b(jset) < dab) CYCLE
@@ -727,10 +750,12 @@ CONTAINS
                      rbc2 = dbc*dbc
                      nij = jset + (iset - 1)*maxnset
 
+                     ! zc_c/cerf_c select the erf (default) or bare-1/r (point-charge) block;
+                     ! screen_radius disables core screening for the long-range 1/r case.
                      CALL verfc( &
                         la_max(iset), npgfa(iset), zeta(:, iset), rpgfa(:, iset), la_min(iset), &
                         lb_max(jset), npgfb(jset), zetb(:, jset), rpgfb(:, jset), lb_min(jset), &
-                        alpha_c, core_radius, 0.0_dp, -core_charge, &
+                        alpha_c, screen_radius, zc_c, cerf_c, &
                         rab, rab2, rac, rac2, rbc2, hab(:, :, nij), verf, vnuc, ff(0:))
                   END DO
                END DO
