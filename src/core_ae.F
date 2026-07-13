@@ -553,6 +553,7 @@ CONTAINS
       CHARACTER(LEN=*), INTENT(IN)                       :: basis_type
 
       CHARACTER(LEN=*), PARAMETER :: routineN = 'build_core_erf_ridft'
+      REAL(KIND=dp), PARAMETER                           :: gth_screen_radius = 1.0E4_dp
 
       INTEGER                                            :: handle, iatom, icol, ikind, img, &
                                                             irow, iset, jatom, jkind, jset, katom, &
@@ -699,6 +700,8 @@ CONTAINS
                CALL get_potential(potential=gth_potential, &
                                   alpha_core_charge=alpha_c, zeff=zeta_c, &
                                   ccore_charge=core_charge, core_charge_radius=core_radius)
+               ! use a large screening radius for the GTH core charge
+               core_radius = gth_screen_radius
                iter => ap_iterator_ppl
             ELSE
                CYCLE
