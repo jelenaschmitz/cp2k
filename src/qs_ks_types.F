@@ -173,6 +173,7 @@ MODULE qs_ks_types
       INTEGER                                               :: neighbor_list_id = -1
       TYPE(neighbor_list_set_p_type), DIMENSION(:), POINTER :: sab_orb => Null(), &
                                                                sac_ae => Null(), &
+                                                               sac_erf => Null(), &
                                                                sac_ppl => Null(), &
                                                                sac_lri => Null(), &
                                                                sap_ppnl => Null(), &
@@ -323,7 +324,7 @@ CONTAINS
                          rho, rho_xc, &
                          vppl, rho_core, rho_nlcc, rho_nlcc_g, vee, &
                          neighbor_list_id, &
-                         sab_orb, sab_all, sac_ae, sac_ppl, sac_lri, sap_ppnl, sap_oce, sab_lrc, &
+                         sab_orb, sab_all, sac_ae, sac_erf, sac_ppl, sac_lri, sap_ppnl, sap_oce, sab_lrc, &
                          sab_se, sab_xtbe, sab_tbe, sab_core, sab_xb, sab_xtb_pp, sab_xtb_nonbond, &
                          sab_vdw, sab_scp, sab_almo, sab_kp, sab_kp_nosym, sab_cneo, &
                          task_list, task_list_soft, &
@@ -353,7 +354,7 @@ CONTAINS
       TYPE(pw_r3d_rs_type), OPTIONAL, POINTER            :: vee
       INTEGER, OPTIONAL                                  :: neighbor_list_id
       TYPE(neighbor_list_set_p_type), DIMENSION(:), OPTIONAL, POINTER :: sab_orb, sab_all, sac_ae, &
-         sac_ppl, sac_lri, sap_ppnl, sap_oce, sab_lrc, sab_se, sab_xtbe, sab_tbe, sab_core, &
+         sac_erf, sac_ppl, sac_lri, sap_ppnl, sap_oce, sab_lrc, sab_se, sab_xtbe, sab_tbe, sab_core, &
          sab_xb, sab_xtb_pp, sab_xtb_nonbond, sab_vdw, sab_scp, sab_almo, sab_kp, sab_kp_nosym, &
          sab_cneo
       TYPE(task_list_type), OPTIONAL, POINTER            :: task_list, task_list_soft
@@ -435,6 +436,7 @@ CONTAINS
       IF (PRESENT(sab_vdw)) sab_vdw => ks_env%sab_vdw
       IF (PRESENT(sab_scp)) sab_scp => ks_env%sab_scp
       IF (PRESENT(sac_ae)) sac_ae => ks_env%sac_ae
+      IF (PRESENT(sac_erf)) sac_erf => ks_env%sac_erf
       IF (PRESENT(sac_ppl)) sac_ppl => ks_env%sac_ppl
       IF (PRESENT(sac_lri)) sac_lri => ks_env%sac_lri
       IF (PRESENT(sap_ppnl)) sap_ppnl => ks_env%sap_ppnl
@@ -569,7 +571,7 @@ CONTAINS
                          vppl, rho_core, rho_nlcc, rho_nlcc_g, vee, &
                          neighbor_list_id, &
                          kpoints, &
-                         sab_orb, sab_all, sac_ae, sac_ppl, sac_lri, sap_ppnl, sap_oce, sab_lrc, &
+                         sab_orb, sab_all, sac_ae, sac_erf, sac_ppl, sac_lri, sap_ppnl, sap_oce, sab_lrc, &
                          sab_se, sab_xtbe, sab_tbe, sab_core, sab_xb, sab_xtb_pp, sab_xtb_nonbond, &
                          sab_vdw, sab_scp, sab_almo, sab_kp, sab_kp_nosym, sab_cneo, &
                          task_list, task_list_soft, &
@@ -595,7 +597,7 @@ CONTAINS
       INTEGER, OPTIONAL                                  :: neighbor_list_id
       TYPE(kpoint_type), OPTIONAL, POINTER               :: kpoints
       TYPE(neighbor_list_set_p_type), DIMENSION(:), OPTIONAL, POINTER :: sab_orb, sab_all, sac_ae, &
-         sac_ppl, sac_lri, sap_ppnl, sap_oce, sab_lrc, sab_se, sab_xtbe, sab_tbe, sab_core, &
+         sac_erf, sac_ppl, sac_lri, sap_ppnl, sap_oce, sab_lrc, sab_se, sab_xtbe, sab_tbe, sab_core, &
          sab_xb, sab_xtb_pp, sab_xtb_nonbond, sab_vdw, sab_scp, sab_almo, sab_kp, sab_kp_nosym, &
          sab_cneo
       TYPE(task_list_type), OPTIONAL, POINTER            :: task_list, task_list_soft
@@ -658,6 +660,7 @@ CONTAINS
       IF (PRESENT(sab_scp)) ks_env%sab_scp => sab_scp
       IF (PRESENT(sab_all)) ks_env%sab_all => sab_all
       IF (PRESENT(sac_ae)) ks_env%sac_ae => sac_ae
+      IF (PRESENT(sac_erf)) ks_env%sac_erf => sac_erf
       IF (PRESENT(sac_ppl)) ks_env%sac_ppl => sac_ppl
       IF (PRESENT(sac_lri)) ks_env%sac_lri => sac_lri
       IF (PRESENT(sap_ppnl)) ks_env%sap_ppnl => sap_ppnl
@@ -798,6 +801,7 @@ CONTAINS
 
       CALL release_neighbor_list_sets(ks_env%sab_orb)
       CALL release_neighbor_list_sets(ks_env%sac_ae)
+      CALL release_neighbor_list_sets(ks_env%sac_erf)
       CALL release_neighbor_list_sets(ks_env%sac_ppl)
       CALL release_neighbor_list_sets(ks_env%sac_lri)
       CALL release_neighbor_list_sets(ks_env%sap_ppnl)
@@ -893,6 +897,7 @@ CONTAINS
       END IF
 
       CALL release_neighbor_list_sets(ks_env%sac_ae)
+      CALL release_neighbor_list_sets(ks_env%sac_erf)
       CALL release_neighbor_list_sets(ks_env%sac_ppl)
       CALL release_neighbor_list_sets(ks_env%sac_lri)
       CALL release_neighbor_list_sets(ks_env%sap_ppnl)

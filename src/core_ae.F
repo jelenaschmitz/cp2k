@@ -539,7 +539,7 @@ CONTAINS
 ! **************************************************************************************************
    SUBROUTINE build_core_erf_ridft(matrix_ks, rho_ao, e_nuc_erf, e_nn_erf, &
                                     qs_kind_set, atomic_kind_set, particle_set, &
-                                    sab_orb, sac_ae, sac_ppl, nimages, cell_to_index, basis_type)
+                                    sab_orb, sac_ae, sac_ppl, sac_erf, nimages, cell_to_index, basis_type)
 
       TYPE(dbcsr_p_type), DIMENSION(:, :), POINTER       :: matrix_ks, rho_ao
       REAL(KIND=dp), INTENT(OUT)                         :: e_nuc_erf, e_nn_erf
@@ -547,7 +547,7 @@ CONTAINS
       TYPE(atomic_kind_type), DIMENSION(:), POINTER      :: atomic_kind_set
       TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
       TYPE(neighbor_list_set_p_type), DIMENSION(:), &
-         POINTER                                         :: sab_orb, sac_ae, sac_ppl
+         POINTER                                         :: sab_orb, sac_ae, sac_ppl, sac_erf
       INTEGER, INTENT(IN)                                :: nimages
       INTEGER, DIMENSION(:, :, :), POINTER               :: cell_to_index
       CHARACTER(LEN=*), INTENT(IN)                       :: basis_type
@@ -579,7 +579,8 @@ CONTAINS
                                                             sphi_b, zeta, zetb
       TYPE(dbcsr_type), ALLOCATABLE, DIMENSION(:)        :: v_nuc_erf
       TYPE(neighbor_list_iterator_p_type), &
-         DIMENSION(:), POINTER                           :: ap_iterator, ap_iterator_ppl, iter
+         DIMENSION(:), POINTER                           :: ap_iterator, ap_iterator_ppl, &
+                                                            ap_iterator_erf, iter
       TYPE(gto_basis_set_type), POINTER                  :: basis_set_a, basis_set_b
       TYPE(gto_basis_set_p_type), DIMENSION(:), POINTER  :: basis_set_list
       TYPE(all_potential_type), POINTER                  :: all_potential
@@ -607,11 +608,13 @@ CONTAINS
       ldsab = MAX(maxco, maxsgf)
       ldai = ncoset(maxl + 1)
 
-      NULLIFY (ap_iterator, ap_iterator_ppl)
+      NULLIFY (ap_iterator, ap_iterator_ppl, ap_iterator_erf)
       IF (ASSOCIATED(sac_ae)) &
          CALL neighbor_list_iterator_create(ap_iterator, sac_ae, search=.TRUE., nthread=1)
       IF (ASSOCIATED(sac_ppl)) &
          CALL neighbor_list_iterator_create(ap_iterator_ppl, sac_ppl, search=.TRUE., nthread=1)
+      IF (ASSOCIATED(sac_erf)) &
+         CALL neighbor_list_iterator_create(ap_iterator_erf, sac_erf, search=.TRUE., nthread=1)
 
       ALLOCATE (hab(ldsab, ldsab, maxnset*maxnset), work(ldsab, ldsab))
       ALLOCATE (verf(ldai, ldai, 2*maxl + 1), vnuc(ldai, ldai, 2*maxl + 1), ff(0:2*maxl))
@@ -696,13 +699,12 @@ CONTAINS
                                   ccore_charge=core_charge, core_charge_radius=core_radius)
                iter => ap_iterator
             ELSE IF (ASSOCIATED(gth_potential)) THEN
-               IF (.NOT. ASSOCIATED(ap_iterator_ppl)) CYCLE
+               IF (.NOT. ASSOCIATED(ap_iterator_erf)) CYCLE
                CALL get_potential(potential=gth_potential, &
                                   alpha_core_charge=alpha_c, zeff=zeta_c, &
                                   ccore_charge=core_charge, core_charge_radius=core_radius)
-               ! use a large screening radius for the GTH core charge
                core_radius = gth_screen_radius
-               iter => ap_iterator_ppl
+               iter => ap_iterator_erf
             ELSE
                CYCLE
             END IF
@@ -768,6 +770,7 @@ CONTAINS
       DEALLOCATE (hab, work, verf, vnuc, ff)
       IF (ASSOCIATED(ap_iterator)) CALL neighbor_list_iterator_release(ap_iterator)
       IF (ASSOCIATED(ap_iterator_ppl)) CALL neighbor_list_iterator_release(ap_iterator_ppl)
+      IF (ASSOCIATED(ap_iterator_erf)) CALL neighbor_list_iterator_release(ap_iterator_erf)
       DEALLOCATE (basis_set_list)
 
       !JS Energy trace + KS update

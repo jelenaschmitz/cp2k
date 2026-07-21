@@ -302,13 +302,14 @@ CONTAINS
          gth_potential_present, lri_optbas, lrigpw, mic, molecule_only, nddo, paw_atom, &
          paw_atom_present, rigpw, sgp_potential_present, xtb, ridft
       LOGICAL, ALLOCATABLE, DIMENSION(:) :: all_present, aux_fit_present, aux_present, &
-         cneo_present, core_present, default_present, nonbond1_atom, nonbond2_atom, oce_present, &
-         orb_present, ppl_present, ppnl_present, ri_present, xb1_atom, xb2_atom
+         cneo_present, core_present, default_present, erf_present, nonbond1_atom, nonbond2_atom, &
+         oce_present, orb_present, ppl_present, ppnl_present, ri_present, xb1_atom, xb2_atom
       REAL(dp)                                           :: almo_rcov, almo_rvdw, eps_schwarz, &
-                                                            omega, pdist, rcut, roperator, subcells
+                                                            erf_reach, omega, pdist, rcut, roperator, &
+                                                            subcells
       REAL(dp), ALLOCATABLE, DIMENSION(:) :: all_pot_rad, aux_fit_radius, c_radius, calpha, &
-         core_radius, nuc_orb_radius, oce_radius, orb_radius, ppl_radius, ppnl_radius, ri_radius, &
-         zeff
+         core_radius, erf_radius, nuc_orb_radius, oce_radius, orb_radius, ppl_radius, ppnl_radius, &
+         ri_radius, zeff
       REAL(dp), ALLOCATABLE, DIMENSION(:, :)             :: pair_radius, pair_radius_lb
       TYPE(all_potential_type), POINTER                  :: all_potential
       TYPE(atomic_kind_type), DIMENSION(:), POINTER      :: atomic_kind_set
@@ -328,8 +329,8 @@ CONTAINS
       TYPE(molecule_type), DIMENSION(:), POINTER         :: molecule_set
       TYPE(neighbor_list_set_p_type), DIMENSION(:), POINTER :: saa_list, sab_all, sab_almo, &
          sab_cn, sab_cneo, sab_core, sab_gcp, sab_kp, sab_kp_nosym, sab_lrc, sab_orb, sab_scp, &
-         sab_se, sab_tbe, sab_vdw, sab_xb, sab_xtb_nonbond, sab_xtb_pp, sab_xtbe, sac_ae, sac_lri, &
-         sac_ppl, sap_oce, sap_ppnl, soa_list, soo_list
+         sab_se, sab_tbe, sab_vdw, sab_xb, sab_xtb_nonbond, sab_xtb_pp, sab_xtbe, sac_ae, sac_erf, &
+         sac_lri, sac_ppl, sap_oce, sap_ppnl, soa_list, soo_list
       TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
       TYPE(paw_proj_set_type), POINTER                   :: paw_proj
       TYPE(qs_dftb_atom_type), POINTER                   :: dftb_atom
@@ -483,6 +484,11 @@ CONTAINS
          ALLOCATE (cneo_present(nkind), nuc_orb_radius(nkind))
          nuc_orb_radius = 0.0_dp
       END IF
+      IF (ridft) THEN
+         ALLOCATE (erf_present(nkind), erf_radius(nkind))
+         erf_present(:) = .FALSE.
+         erf_radius(:) = 0.0_dp
+      END IF
 
       ! Initialize the local data structures
       ALLOCATE (atom2d(nkind))
@@ -551,6 +557,11 @@ CONTAINS
             ELSE
                core_present(ikind) = .FALSE.
             END IF
+         END IF
+
+         IF (ridft) THEN
+            IF (ASSOCIATED(gth_potential) .AND. zeff(ikind) /= 0._dp .AND. calpha(ikind) /= 0._dp) &
+               erf_present(ikind) = .TRUE.
          END IF
 
          ! Pseudopotentials
@@ -737,6 +748,21 @@ CONTAINS
             CALL set_ks_env(ks_env=ks_env, sac_ae=sac_ae)
             CALL write_neighbor_lists(sac_ae, particle_set, cell, para_env, neighbor_list_section, &
                                       "/SAC_AE", "sac_ae", "ORBITAL ERFC POTENTIAL")
+         END IF
+      END IF
+
+      IF (ridft) THEN
+         IF (ANY(erf_present)) THEN
+            erf_reach = SQRT(SUM((cell%hmat(:, 1) + cell%hmat(:, 2) + cell%hmat(:, 3))**2))
+            DO ikind = 1, nkind
+               IF (erf_present(ikind)) erf_radius(ikind) = erf_reach
+            END DO
+            CALL pair_radius_setup(orb_present, erf_present, orb_radius, erf_radius, pair_radius)
+            CALL build_neighbor_lists(sac_erf, particle_set, atom2d, cell, pair_radius, &
+                                      subcells=subcells, operator_type="ABC", nlname="sac_erf")
+            CALL set_ks_env(ks_env=ks_env, sac_erf=sac_erf)
+            CALL write_neighbor_lists(sac_erf, particle_set, cell, para_env, neighbor_list_section, &
+                                      "/SAC_ERF", "sac_erf", "ORBITAL ERF CORE")
          END IF
       END IF
 
@@ -1035,6 +1061,9 @@ CONTAINS
       END IF
       IF (cneo_potential_present) THEN
          DEALLOCATE (cneo_present, nuc_orb_radius)
+      END IF
+      IF (ridft) THEN
+         DEALLOCATE (erf_present, erf_radius)
       END IF
 
       CALL timestop(handle)

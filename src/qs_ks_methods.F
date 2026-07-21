@@ -311,7 +311,8 @@ CONTAINS
       REAL(KIND=dp),DIMENSION(:,:,:), POINTER            :: int_3c_ptr => NULL()
       REAL(KIND=dp)                                      :: e_nuc_erf, e_nn_erf
       TYPE(neighbor_list_set_p_type), DIMENSION(:), &
-         POINTER                                         :: sab_orb_ridft, sac_ae_ridft, sac_ppl_ridft
+         POINTER                                         :: sab_orb_ridft, sac_ae_ridft, sac_ppl_ridft, &
+                                                            sac_erf_ridft
       INTEGER, DIMENSION(:, :, :), POINTER               :: cell_to_index_ridft
       TYPE(kpoint_type), POINTER                         :: kpoints_ridft
       !TYPE(neighbor_list_set_p_type), DIMENSION(:), &
@@ -1359,16 +1360,16 @@ CONTAINS
             CALL dbcsr_add(ks_matrix(1,1)%matrix,v_ao_dbcsr,alpha_scalar=1.0_dp, beta_scalar=1.0_dp)
 
             !   energy%hartree += e_nuc_erf + e_nn_erf - energy%core_self
-            NULLIFY (sab_orb_ridft, sac_ae_ridft, sac_ppl_ridft, cell_to_index_ridft, kpoints_ridft)
+            NULLIFY (sab_orb_ridft, sac_ae_ridft, sac_ppl_ridft, sac_erf_ridft, cell_to_index_ridft, kpoints_ridft)
             CALL get_qs_env(qs_env, sab_orb=sab_orb_ridft, sac_ae=sac_ae_ridft, &
-                            sac_ppl=sac_ppl_ridft, kpoints=kpoints_ridft)
+                            sac_ppl=sac_ppl_ridft, sac_erf=sac_erf_ridft, kpoints=kpoints_ridft)
             IF (nimages > 1 .AND. ASSOCIATED(kpoints_ridft)) THEN
                CALL get_kpoint_info(kpoint=kpoints_ridft, cell_to_index=cell_to_index_ridft)
             END IF
-            IF (ASSOCIATED(sac_ae_ridft) .OR. ASSOCIATED(sac_ppl_ridft)) THEN
+            IF (ASSOCIATED(sac_ae_ridft) .OR. ASSOCIATED(sac_ppl_ridft) .OR. ASSOCIATED(sac_erf_ridft)) THEN
                CALL build_core_erf_ridft(ks_matrix, rho_ao, e_nuc_erf, e_nn_erf, &
                                           qs_kind_set, atomic_kind_set, particle_set, &
-                                          sab_orb_ridft, sac_ae_ridft, sac_ppl_ridft, &
+                                          sab_orb_ridft, sac_ae_ridft, sac_ppl_ridft, sac_erf_ridft, &
                                           nimages, cell_to_index_ridft, "ORB")
                                           
                energy%hartree = energy%hartree + e_nuc_erf + e_nn_erf - energy%core_self
