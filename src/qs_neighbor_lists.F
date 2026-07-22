@@ -352,6 +352,7 @@ CONTAINS
 
       NULLIFY (sab_orb)
       NULLIFY (sac_ae)
+      NULLIFY (sac_erf)
       NULLIFY (sac_ppl)
       NULLIFY (sac_lri)
       NULLIFY (sap_ppnl)
