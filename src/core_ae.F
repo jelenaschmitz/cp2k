@@ -553,7 +553,6 @@ CONTAINS
       CHARACTER(LEN=*), INTENT(IN)                       :: basis_type
 
       CHARACTER(LEN=*), PARAMETER :: routineN = 'build_core_erf_ridft'
-      REAL(KIND=dp), PARAMETER                           :: gth_screen_radius = 1.0E4_dp
 
       INTEGER                                            :: handle, iatom, icol, ikind, img, &
                                                             irow, iset, jatom, jkind, jset, katom, &
@@ -567,7 +566,7 @@ CONTAINS
       INTEGER, DIMENSION(:, :), POINTER                  :: first_sgfa, first_sgfb
       LOGICAL                                            :: dokp, found
       REAL(KIND=dp)                                      :: alpha_ab_nn, alpha_c, core_charge, &
-                                                            core_radius, dab, dab_nn, dac, dbc, e_img, &
+                                                            dab, dab_nn, dac, dbc, e_img, &
                                                             rab2, rac2, rbc2, zeta_c
       REAL(KIND=dp), DIMENSION(3)                        :: rab_nn
       REAL(KIND=dp), ALLOCATABLE, DIMENSION(:)           :: alpha_nn, ff, z_nn
@@ -690,20 +689,19 @@ CONTAINS
                IF (.NOT. ASSOCIATED(ap_iterator)) CYCLE
                CALL get_potential(potential=all_potential, &
                                   alpha_core_charge=alpha_c, zeff=zeta_c, &
-                                  ccore_charge=core_charge, core_charge_radius=core_radius)
+                                  ccore_charge=core_charge)
                iter => ap_iterator
             ELSE IF (ASSOCIATED(sgp_potential)) THEN
                IF (.NOT. ASSOCIATED(ap_iterator)) CYCLE
                CALL get_potential(potential=sgp_potential, &
                                   alpha_core_charge=alpha_c, zeff=zeta_c, &
-                                  ccore_charge=core_charge, core_charge_radius=core_radius)
+                                  ccore_charge=core_charge)
                iter => ap_iterator
             ELSE IF (ASSOCIATED(gth_potential)) THEN
                IF (.NOT. ASSOCIATED(ap_iterator_erf)) CYCLE
                CALL get_potential(potential=gth_potential, &
                                   alpha_core_charge=alpha_c, zeff=zeta_c, &
-                                  ccore_charge=core_charge, core_charge_radius=core_radius)
-               core_radius = gth_screen_radius
+                                  ccore_charge=core_charge)
                iter => ap_iterator_erf
             ELSE
                CYCLE
@@ -719,11 +717,9 @@ CONTAINS
                dbc = SQRT(SUM(rbc*rbc))
 
                DO iset = 1, nseta
-                  IF (set_radius_a(iset) + core_radius < dac) CYCLE
                   ncoa = npgfa(iset)*ncoset(la_max(iset))
                   sgfa = first_sgfa(1, iset)
                   DO jset = 1, nsetb
-                     IF (set_radius_b(jset) + core_radius < dbc) CYCLE
                      ncob = npgfb(jset)*ncoset(lb_max(jset))
                      sgfb = first_sgfb(1, jset)
                      IF (set_radius_a(iset) + set_radius_b(jset) < dab) CYCLE
@@ -735,7 +731,7 @@ CONTAINS
                      CALL verfc( &
                         la_max(iset), npgfa(iset), zeta(:, iset), rpgfa(:, iset), la_min(iset), &
                         lb_max(jset), npgfb(jset), zetb(:, jset), rpgfb(:, jset), lb_min(jset), &
-                        alpha_c, core_radius, 0.0_dp, -core_charge, &
+                        alpha_c, MAX(dac, dbc), 0.0_dp, -core_charge, &
                         rab, rab2, rac, rac2, rbc2, hab(:, :, nij), verf, vnuc, ff(0:))
                   END DO
                END DO
