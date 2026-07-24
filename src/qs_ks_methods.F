@@ -385,14 +385,6 @@ CONTAINS
 
       CALL qs_rho_get(rho, rho_r=rho_r, rho_ao_kp=rho_ao)
 
-      !JS added for debugging purposes. Remove later
-      PRINT *, '--------------------'
-      PRINT *, 'RIDFT:', ridft
-      PRINT *, 'GAPW:', gapw
-      PRINT *, 'matrix_h(1,1)%matrix directly after get_qs_env'
-      CALL dbcsr_print(matrix_h(1,1)%matrix)
-      PRINT *, '--------------------'
-
       nimages = dft_control%nimages
       nspins = dft_control%nspins
 
@@ -430,16 +422,6 @@ CONTAINS
                  qs_env%cp_ddapc_ewald%do_decoupling .OR. &
                  qs_env%cp_ddapc_ewald%do_qmmm_periodic_decpl .OR. &
                  qs_env%cp_ddapc_ewald%do_solvation
-      
-      !JS remove:
-      PRINT *, 'dft_control%qs_control%ddapc_restraint'
-      PRINT *, dft_control%qs_control%ddapc_restraint
-      PRINT *, 'qs_env%cp_ddapc_ewald%do_decoupling'
-      PRINT *, qs_env%cp_ddapc_ewald%do_decoupling
-      PRINT *, 'qs_env%cp_ddapc_ewald%do_qmmm_periodic_decpl'
-      PRINT *, qs_env%cp_ddapc_ewald%do_qmmm_periodic_decpl
-      PRINT *, 'qs_env%cp_ddapc_ewald%do_solvation'
-      PRINT *, qs_env%cp_ddapc_ewald%do_solvation
 
       ! Check if LRIGPW is used
       lrigpw = dft_control%qs_control%lrigpw
@@ -469,8 +451,6 @@ CONTAINS
 
       do_ppl = dft_control%qs_control%do_ppl_method == do_ppl_grid
       IF (do_ppl) THEN
-         !JS remove:
-         PRINT *, '* Calculating vppl_rspace'
          CPASSERT(.NOT. gapw)
          CALL get_qs_env(qs_env=qs_env, vppl=vppl_rspace)
       END IF
@@ -488,26 +468,11 @@ CONTAINS
 
       ! ***  Prepare densities for gapw ***
       IF (gapw .OR. gapw_xc) THEN
-
-         !JS added for debugging purposes. Remove later
-         PRINT *, '--------------------'
-         PRINT *, 'matrix_h(1,1)%matrix before prepare_gapw_den'
-         CALL dbcsr_print(matrix_h(1,1)%matrix)
-         PRINT *, '--------------------'
-
-         PRINT *, '* Prepare densities for gapw*'
-
          CALL prepare_gapw_den(qs_env, do_rho0=(.NOT. gapw_xc))
-
-         PRINT *, '--------------------'
-         PRINT *, 'matrix_h(1,1)%matrix after prepare_gapw_den'
-         CALL dbcsr_print(matrix_h(1,1)%matrix)
-         PRINT *, '--------------------'
       END IF
 
       !JS Only do so if RIDFT calculation of the Hartree Pot. isnt wanted
       IF (.NOT. dft_control%qs_control%ridft) THEN
-         PRINT *, '*Creating rho_tot_gspace and v_hartree_gspace*'
          ! Calculate the Hartree potential
          CALL auxbas_pw_pool%create_pw(v_hartree_gspace)
          CALL auxbas_pw_pool%create_pw(rho_tot_gspace)
@@ -518,10 +483,6 @@ CONTAINS
                   cp_p_file) .AND. &
             (.NOT. gapw) .AND. (.NOT. gapw_xc) .AND. &
             (.NOT. (poisson_env%parameters%solver == pw_poisson_implicit))) THEN
-            
-               !JS remove:
-            PRINT *, '*Calculating v_hartree_gspace*'
-
             CALL pw_zero(rho_tot_gspace)
             CALL calc_rho_tot_gspace(rho_tot_gspace, qs_env, rho, skip_nuclear_density=.TRUE.)
             CALL pw_poisson_solve(poisson_env, rho_tot_gspace, energy%e_hartree, &
@@ -533,16 +494,11 @@ CONTAINS
 
       !JS Additions to test calc_rho_tot_gspace influence
       IF (dft_control%qs_control%ridft) THEN
-         PRINT *, '*Creating rho_tot_gspace and setting it to zeros*'
          CALL auxbas_pw_pool%create_pw(rho_tot_gspace)
          CALL pw_zero(rho_tot_gspace)
          CALL auxbas_pw_pool%create_pw(v_hartree_rspace)
-         PRINT *, 'pw_zero(v_hartree_rspace)'
          CALL pw_zero(v_hartree_rspace)
       END IF
-
-      ! PRINT *, 'pw_zero(v_hartree_rspace) also for GAPW'
-      ! CALL pw_zero(v_hartree_rspace)
 
       ! Get the total density in g-space [ions + electrons]
       CALL calc_rho_tot_gspace(rho_tot_gspace, qs_env, rho)
@@ -581,9 +537,6 @@ CONTAINS
                virial%pv_ehartree = virial%pv_ehartree + h_stress/REAL(para_env%num_pe, dp)
                virial%pv_virial = virial%pv_virial + h_stress/REAL(para_env%num_pe, dp)
             ELSE
-               ! !JS remove 
-               ! CALL pw_zero(rho_tot_gspace)
-               ! CALL pw_zero(v_hartree_gspace)
                CALL pw_poisson_solve(poisson_env, rho_tot_gspace, energy%hartree, &
                                     v_hartree_gspace, rho_core=rho_core)
             END IF
@@ -593,8 +546,6 @@ CONTAINS
       ! In case decouple periodic images and/or apply restraints to charges
       IF (do_ddapc) THEN
          IF (.NOT. dft_control%qs_control%ridft) THEN
-            !JS remove
-            PRINT *, 'qs_ks_ddapc aufgerufen'
             CALL qs_ks_ddapc(qs_env, auxbas_pw_pool, rho_tot_gspace, v_hartree_gspace, &
                            v_spin_ddapc_rest_r, energy, calculate_forces, ks_matrix, &
                            just_energy)
@@ -738,8 +689,6 @@ CONTAINS
          CALL get_admm_env(admm_env, rho_aux_fit=rho_struct)
 
          ! here we ignore a possible vdW section in admm_env%xc_section_aux
-         !JS remove print
-         PRINT *,'qs_vxc_create(...vxc_tau=v_tau_rspace_aux_fit,'
          CALL qs_vxc_create(ks_env=ks_env, rho_struct=rho_struct, xc_section=xc_section, &
                             vxc_rho=v_rspace_new_aux_fit, vxc_tau=v_tau_rspace_aux_fit, exc=energy%exc_aux_fit, &
                             just_energy=just_energy_xc)
@@ -789,21 +738,12 @@ CONTAINS
                                             energy%embed_corr, just_energy)
          END IF
          ! Everything else
-         !Js remove print statement
-         PRINT *, 'qs_vxc_create(ks_env=ks_env, rho_struct=rho_struct,...v_tau_rspace'
          CALL qs_vxc_create(ks_env=ks_env, rho_struct=rho_struct, xc_section=xc_section, &
                             vxc_rho=v_rspace_new, vxc_tau=v_tau_rspace, exc=energy%exc, &
                             edisp=edisp, dispersion_env=qs_env%dispersion_env, &
                             just_energy=just_energy_xc)
-         !JS remove 
-         IF (ASSOCIATED(v_rspace_new)) THEN 
-            PRINT *, 'v_rspace_new associated after qs_vxc_create'
-         END IF
          IF (edisp /= 0.0_dp) energy%dispersion = edisp
          IF (qs_env%requires_matrix_vxc .AND. ASSOCIATED(v_rspace_new)) THEN
-            !Js remove print statement
-            PRINT *, 'qs_env%requires_matrix_vxc .AND. ASSOCIATED(v_rspace_new)'
-            PRINT *, 'compute_matrix_vxc(qs_env=qs_env, v_rspace=v_rspace_new, matrix_vxc=matrix_vxc)'
             CALL compute_matrix_vxc(qs_env=qs_env, v_rspace=v_rspace_new, matrix_vxc=matrix_vxc)
             CALL set_ks_env(ks_env, matrix_vxc=matrix_vxc)
          END IF
@@ -851,8 +791,6 @@ CONTAINS
       END IF
 
       IF (ASSOCIATED(rho_nlcc) .AND. calculate_forces) THEN
-         !JS remove:
-         PRINT *, 'integrate_rho_nlcc(v_rspace_new(ispin), qs_env)***'
          DO ispin = 1, nspins
             CALL integrate_rho_nlcc(v_rspace_new(ispin), qs_env)
             IF (dft_control%do_admm) CALL integrate_rho_nlcc(v_rspace_new_aux_fit(ispin), qs_env)
@@ -871,22 +809,9 @@ CONTAINS
          energy%exc = energy%exc - ekin_mol
 
       END IF
-      !JS remove:
-      PRINT *, '-------------------- Before RIDFT Hartree Calculation'
-      PRINT *, 'rho_ao(1,1)%matrix'
-      CALL dbcsr_print(rho_ao(1,1)%matrix)
-      PRINT *, '--------------------'
-      PRINT *, '--------------------'
-      PRINT *, 'RIDFT:', ridft
-      PRINT *, 'GAPW:', gapw
-      PRINT *, 'matrix_h(1,1)%matrix before RIDFT Hartree Calculation'
-      CALL dbcsr_print(matrix_h(1,1)%matrix)
-      PRINT *, '--------------------'
 
 
       IF (dft_control%qs_control%ridft) THEN
-         PRINT *, 'RI-DFT| Started v_hartree calc ***'
-
          !JS Setup necessary parameters for calculation:
          CALL get_qs_env(qs_env, scf_control=scf_control,qs_kind_set=qs_kind_set, particle_set=particle_set,&
                          mos=mos, atomic_kind_set=atomic_kind_set, scf_env=scf_env_ridft)
@@ -930,8 +855,6 @@ CONTAINS
          sizes_RI = 0
          n_RI = 0
          DO iatom = 1, n_atom
-            PRINT *, 'RI-DFT| iatom: ', iatom
-            PRINT *, 'RI-DFT| i_RI_start_from_atom: ', n_RI + 1
             i_RI_start_from_atom(iatom) = n_RI + 1
             ikind = kind_of(iatom)
             CALL get_qs_kind(qs_kind=qs_kind_set(ikind), nsgf=nsgf, basis_type="RI_AUX")
@@ -939,11 +862,6 @@ CONTAINS
             n_RI = n_RI + nsgf
             i_RI_end_from_atom(iatom) = n_RI
          END DO
-
-         PRINT *, 'RI-DFT| n_ao', n_ao
-         PRINT *, 'RI-DFT| n_atom', n_atom
-         PRINT *,'SUM(sizes_RI): ', SUM(sizes_RI)
-         PRINT *, 'RI-DFT| n_RI: ', n_RI
 
          post_scf_bands_section => section_vals_get_subs_vals(qs_env%input, "PROPERTIES%BANDSTRUCTURE")
          gw_sec => section_vals_get_subs_vals(post_scf_bands_section, "GW")
@@ -971,25 +889,10 @@ CONTAINS
             CALL cp_fm_to_cfm(msourcer=temp_print_fm, mtarget=rho_ao_ridft_copy(i))
          END DO
 
-         PRINT *, '--------------------'
-         PRINT *, 'rho_ao_ridft(1) from current SCF rho_ao'
-         CALL copy_dbcsr_to_fm(rho_ao(1, 1)%matrix, temp_print_fm)
-         CALL dbcsr_create(print_temp_dbcsr, 'print_temp_dbcsr', template=rho_ao_calc)
-         CALL copy_fm_to_dbcsr(temp_print_fm, print_temp_dbcsr)
-         CALL dbcsr_print(print_temp_dbcsr)
-         PRINT *, '--------------------'
-         CALL dbcsr_create(rho_ao_ridft_copy_dbcsr, 'rho_ao_ridft_copy_dbcsr', template=rho_ao_calc)
-         CALL copy_fm_to_dbcsr(temp_print_fm, rho_ao_ridft_copy_dbcsr)
-         CALL dbcsr_print(rho_ao_ridft_copy_dbcsr)
-         PRINT *, '--------------------'
 
          IF (.FALSE.) THEN 
          ALLOCATE (occupations(n_ao))
-         PRINT *, 'dft_control%nspins:'
-         PRINT *, dft_control%nspins
          DO i = 1, dft_control%nspins
-            PRINT *, 'i :'
-            PRINT *, i
             CALL cp_cfm_create(rho_ao_ridft(i), matrix_struct=rho_fm_struct)
             CALL cp_cfm_create(rho_ao_ridft_copy(i), matrix_struct=rho_fm_struct)
             !***JS additions needed to create the fm_mo_coeff_Gamma:
@@ -1016,14 +919,6 @@ CONTAINS
                                 scf_control%eps_eigval)
             !JS *** End of Additions
          END DO
-         PRINT *, '--------------------'
-         PRINT *, 'Temp fm_mo_coeff_Gamma fm'
-         CALL cp_fm_create(temp_print_fm, rho_fm_struct)
-         CALL cp_fm_to_fm(fm_mo_coeff_Gamma(1), temp_print_fm)
-         CALL dbcsr_create(print_temp_dbcsr,'print_temp_dbcsr', template =  rho_ao_calc)!, matrix_type=dbcsr_type_no_symmetry)
-         CALL copy_fm_to_dbcsr(temp_print_fm, print_temp_dbcsr)
-         CALL dbcsr_print(print_temp_dbcsr)
-         PRINT *, '--------------------'
          ALLOCATE (real_workspace(2))
          CALL cp_fm_create(real_workspace(1), fm_ks_Gamma(1)%matrix_struct)
          CALL cp_fm_set_all(real_workspace(1), 0.0_dp)
@@ -1048,35 +943,6 @@ CONTAINS
          CALL cp_cfm_scale(2.0_dp,rho_ao_ridft(1))
          CALL cp_cfm_scale(2.0_dp,rho_ao_ridft_copy(1))
 
-         ! PRINT *, '--------------------'
-         ! PRINT *, 'Temp real_workspace 1 fm'
-         ! CALL cp_fm_to_fm(real_workspace(1), temp_print_fm)
-         ! CALL copy_fm_to_dbcsr(temp_print_fm, print_temp_dbcsr)
-         ! CALL dbcsr_print(print_temp_dbcsr)
-         ! PRINT *, '--------------------'
-         ! PRINT *, '--------------------'
-         ! PRINT *, 'Temp real_workspace 2 fm'
-         ! CALL cp_fm_to_fm(real_workspace(2), temp_print_fm)
-         ! CALL copy_fm_to_dbcsr(temp_print_fm, print_temp_dbcsr)
-         ! CALL dbcsr_print(print_temp_dbcsr)
-         ! PRINT *, '--------------------'
-         PRINT *, '--------------------'
-         PRINT *, 'Temp rho_ao_ridft 1 fm'
-         CALL cp_cfm_to_fm(rho_ao_ridft(1), mtargetr=temp_print_fm)
-         CALL copy_fm_to_dbcsr(temp_print_fm, print_temp_dbcsr)
-         CALL dbcsr_print(print_temp_dbcsr)
-         PRINT *, '--------------------'
-         PRINT *, '--------------------'
-         PRINT *, 'rho_ao_calc'
-         CALL dbcsr_print(rho_ao_calc)
-         PRINT *, '--------------------'
-         PRINT *, 'Temp rho_ao_ridft copy fm'
-         CALL cp_cfm_to_fm(rho_ao_ridft_copy(1), mtargetr=temp_print_fm)
-         !ALLOCATE(rho_ao_ridft_copy_dbcsr(1,1))
-         !CALL dbcsr_create(rho_ao_ridft_copy_dbcsr,'rho_ao_ridft_copy_dbcsr', template =  rho_ao_calc)
-         !CALL copy_fm_to_dbcsr(temp_print_fm, rho_ao_ridft_copy_dbcsr)
-         CALL dbcsr_print(rho_ao_ridft_copy_dbcsr)
-         PRINT *, '--------------------'
          END IF ! end of old density reconstruction block (Bug #1)
 
          !JS maybe still implement:
@@ -1092,12 +958,7 @@ CONTAINS
                                    basis_set_AO = basis_set_AO_p_type,&
                                    basis_set_RI = basis_set_RI_p_type, &
                                    i_RI_start_from_atom = i_RI_start_from_atom, ri_metric = ri_metric,&
-                                   qs_env = qs_env, unit_nr = unit_nr) 
-         !JS remove print
-         PRINT *, '--------------------'
-         PRINT *, 'In RIDFT int_3c_ptr   '
-         PRINT *, int_3c_ptr
-         PRINT *, '--------------------'                        
+                                   qs_env = qs_env, unit_nr = unit_nr)                      
           
          ALLOCATE (v_fm(dft_control%nspins))
 
@@ -1119,19 +980,12 @@ CONTAINS
          ! Eq. (21) in overleaf RI RI
          CALL create_2c_coulomb_rep_v(v_dbcsr, basis_set_RI_p_type, qs_env,&
                                       n_RI, blacs_env, para_env, ri_metric)
-         PRINT *, '--------------------'
-         PRINT *, 'RIDFT 2c coulomb repul v_dbcsr final'
-         CALL dbcsr_print(v_dbcsr)
-         PRINT *, '--------------------'
-
-         
+       
 
          !JS From Stepan: v_dbcsr Previously calculated 2c Coulomb repulsion between RI orbitals
          !rho_fm Density matrix corresponding to single spin species, in atomic orbital basis
          IF (dft_control%nspins == 1) spin_degeneracy = 2.0_dp
          IF (dft_control%nspins == 2) spin_degeneracy = 1.0_dp
-         PRINT *, 'spin_degeneracy: ', spin_degeneracy
-         PRINT *, 'Setting energy%hartree = 0.0_dp: '
          energy%hartree = 0.0_dp
          DO i = 1, dft_control%nspins
             !CALL copy_dbcsr_to_fm(rho_ao(1,i)%matrix, rho_ri_dft_fm(i))
@@ -1148,27 +1002,12 @@ CONTAINS
                                  rho_dbcsr = rho_ao_calc,&
                                  v_ao_dbcsr = v_ao_dbcsr)
             
-            PRINT *, '-------------------- after get_hartree_noenv'
-            PRINT *, 'Temp rho_ao_ridft 1 fm'
-            CALL cp_cfm_to_fm(rho_ao_ridft(1), mtargetr=temp_print_fm)
-            CALL copy_fm_to_dbcsr(temp_print_fm, print_temp_dbcsr)
-            CALL dbcsr_print(print_temp_dbcsr)
-            PRINT *, '--------------------'
-            PRINT *, '-------------------- after get_hartree_noenv'
-            PRINT *, 'rho_ao_calc'
-            CALL dbcsr_print(rho_ao_calc)
-            PRINT *, '-------------------- after get_hartree_noenv'
-            PRINT *, 'RIDFT| Temp rho_ao_ridft_copy_dbcsr after get_hartree_noenv'
-            CALL dbcsr_print(rho_ao_ridft_copy_dbcsr)
-            PRINT *, '--------------------'
-
             ! recomment if rho isnt scaled by spin degeneracy
             ! ! Scaling by spin degeneracy
             ! CALL cp_fm_scale(spin_degeneracy, v_fm(i))
 
             !!CALL dbcsr_clear(v_dbcsr)
             CALL dbcsr_clear(v_ao_dbcsr)
-            PRINT *, 'RI-DFT| v_dbcsr und v_ao_dbcsr cleared'
 
             !Calculate Hartree energy contribution from potential 
             e_hartree_ri_local = 0.0_dp
@@ -1176,54 +1015,21 @@ CONTAINS
             !Transfer calculated v_hartree from fm to dbcsr
             CALL copy_fm_to_dbcsr(v_fm(i), v_ao_dbcsr)
 
-            PRINT *, '--------------------'
-            PRINT *, 'RIDFT v_ao_dbcsr pre transpose'
-            CALL dbcsr_print(v_ao_dbcsr)
-            PRINT *, '--------------------'
-
             !Tranpose the Hartree Pot 
             CALL dbcsr_create(v_hartree_T, 'v_hartree_T', template=v_ao_dbcsr)
             CALL dbcsr_transposed(v_hartree_T,v_ao_dbcsr)
             CALL dbcsr_desymmetrize(v_hartree_T, v_hartree_T_unsym)
-
-            PRINT *, '--------------------'
-            PRINT *, 'RIDFT v_hartree_T '
-            CALL dbcsr_print(v_hartree_T)
-            PRINT *, '--------------------'
-            PRINT *, '--------------------'
-            PRINT *, 'RIDFT v_hartree_T_unsym post transpose'
-            CALL dbcsr_print(v_hartree_T_unsym)
-            PRINT *, '--------------------'
-            PRINT *, '--------------------'
-            PRINT *, 'RIDFT v_ao_dbcsr post transpose'
-            CALL dbcsr_print(v_ao_dbcsr)
-            PRINT *, '--------------------'
 
 
             !Calculate Trace using dot(rho, v_hartree_transpose)
             CALL dbcsr_dot(rho_ao_ridft_copy_dbcsr, &
                   v_hartree_T_unsym, &
                   e_hartree_ri_local)
-            PRINT *, 'RI-DFT| e_hartree_ri_local: ', e_hartree_ri_local
             e_hartree_ri_local = e_hartree_ri_local *0.5_dp
 
             !CALL para_env%sum(e_hartree_ri_local)
             energy%hartree = energy%hartree + e_hartree_ri_local
 
-            PRINT *, 'RI-DFT|  energy%hartree: ',  energy%hartree
-             PRINT *, '-------------------- after energy calc'
-            PRINT *, 'Temp rho_ao_ridft 1 fm'
-            CALL cp_cfm_to_fm(rho_ao_ridft(1), mtargetr=temp_print_fm)
-            CALL copy_fm_to_dbcsr(temp_print_fm, print_temp_dbcsr)
-            CALL dbcsr_print(print_temp_dbcsr)
-            PRINT *, '--------------------'
-            PRINT *, '-------------------- after energy calc'
-            PRINT *, 'rho_ao_calc'
-            CALL dbcsr_print(rho_ao_calc)
-            PRINT *, '-------------------- after energy calc'
-            PRINT *, 'Temp rho_ao_ridft copy fm'
-            CALL dbcsr_print(rho_ao_ridft_copy_dbcsr)
-            PRINT *, '--------------------'
          END DO
 
          CALL dbcsr_release(v_hartree_T)
@@ -1247,16 +1053,6 @@ CONTAINS
          !energy%hartree = 0.0_dp
       END If
       
-      PRINT *, '-------------------- After RIDFT Hartree Calculation'
-      PRINT *, 'rho_ao(1,1)%matrix'
-      CALL dbcsr_print(rho_ao(1,1)%matrix)
-      PRINT *, '--------------------'
-      PRINT *, '--------------------'
-      PRINT *, 'RIDFT:', ridft
-      PRINT *, 'GAPW:', gapw
-      PRINT *, 'matrix_h(1,1)%matrix directly after RIDFT Hartree Calculation'
-      CALL dbcsr_print(matrix_h(1,1)%matrix)
-      PRINT *, '--------------------'
 
       ! ***  Single atom contributions ***
       IF (.NOT. just_energy) THEN
@@ -1268,15 +1064,11 @@ CONTAINS
                   TYPE(pw_r3d_rs_type) :: v_minus_veps
                   CALL auxbas_pw_pool%create_pw(v_minus_veps)
                   CALL pw_copy(v_hartree_rspace, v_minus_veps)
-                  !JS remove print:
-                  PRINT *, 'CALL pw_copy(v_hartree_rspace, v_minus_veps)'
                   CALL pw_axpy(poisson_env%implicit_env%v_eps, v_minus_veps, -v_hartree_rspace%pw_grid%dvol)
                   CALL integrate_v_core_rspace(v_minus_veps, qs_env)
                   CALL auxbas_pw_pool%give_back_pw(v_minus_veps)
                END BLOCK
             ELSE
-               !JS remove print:
-               PRINT *, '*integrate_v_core_rspace* *****'
                CALL integrate_v_core_rspace(v_hartree_rspace, qs_env)
             END IF
          END IF
@@ -1288,10 +1080,6 @@ CONTAINS
                DO img = 1, nimages
                   CALL dbcsr_get_info(ks_matrix(ispin, img)%matrix, name=name) ! keep the name
                   CALL dbcsr_copy(ks_matrix(ispin, img)%matrix, matrix_h(1, img)%matrix, name=name)
-                  PRINT *, '************************'
-                  PRINT *, 'Core hamiltonian part with nuclear pot'
-                  CALL dbcsr_print(matrix_h(1, img)%matrix)
-                  PRINT *, '************************'
                END DO
             END DO
             ! imaginary part if required
@@ -1318,45 +1106,12 @@ CONTAINS
          IF (dft_control%qs_control%ridft) THEN
             ALLOCATE(my_rho(1,1))
             my_rho(1,1)%matrix => rho_ao_ridft_copy_dbcsr
-            PRINT *, '--------------------'
-            PRINT *, 'rho_ao_ridft_copy_dbcsr'
-            CALL dbcsr_print(rho_ao_ridft_copy_dbcsr)
-            PRINT *, '--------------------'
          ELSE
             my_rho => rho_ao 
          END IF
 
-         PRINT *, '--------------------'
-         PRINT *, 'my_rho'
-         CALL dbcsr_print(my_rho(1,1)%matrix)
-         PRINT *, '--------------------'
-         PRINT *, '--------------------'
-         PRINT *, 'rho_ao(1,1)%matrix'
-         CALL dbcsr_print(rho_ao(1,1)%matrix)
-         PRINT *, '--------------------'
-
-         !JS Test to simply add Hartree potential to ks_matrix :
-         !Implement spin dependent v_ao_dbcsr
-         PRINT *, '************************'
-         PRINT *, 'ks_matrix(1,1)%matrix 1 (before sum up and integrate)'
-         CALL dbcsr_print(ks_matrix(1,1)%matrix)
-         PRINT *, '************************'
-
-         PRINT *, '************************'
-         PRINT *, 'matrix_s%matrix  (before sum up and integrate)'
-         CALL dbcsr_print(matrix_s(1,1)%matrix)
-         PRINT *, '************************'
-
-         PRINT *, '************************'
-         PRINT *, 'matrix_t%matrix  (before sum up and integrate)'
-         CALL dbcsr_print(matrix_t(1,1)%matrix)
-         PRINT *, '************************'
 
          IF (dft_control%qs_control%ridft) THEN
-            PRINT *, '************************'
-            PRINT *, 'v_ao_dbcsr  (before adding to ks_matrix)'
-            CALL dbcsr_print(v_ao_dbcsr)
-            PRINT *, '************************'
             CALL dbcsr_add(ks_matrix(1,1)%matrix,v_ao_dbcsr,alpha_scalar=1.0_dp, beta_scalar=1.0_dp)
 
             !   energy%hartree += e_nuc_erf + e_nn_erf - energy%core_self
@@ -1373,33 +1128,14 @@ CONTAINS
                                           nimages, cell_to_index_ridft, "ORB")
                                           
                energy%hartree = energy%hartree + e_nuc_erf + e_nn_erf - energy%core_self
-               PRINT *, 'RIDFT| e_nuc_erf (Tr[P*V_nuc_erf]):', e_nuc_erf
-               PRINT *, 'RIDFT| e_nn_erf  (Z_A*Z_B*erf/R):  ', e_nn_erf
-               PRINT *, 'RIDFT| energy%core_self:            ', energy%core_self
-               PRINT *, 'RIDFT| energy%hartree after correction:', energy%hartree
             END IF
          END IF
-
-         PRINT *, '************************'
-         PRINT *, 'ks_matrix(1,ispin)%matrix 2 (after adding v_H for RIDFT)'
-         CALL dbcsr_print(ks_matrix(1,1)%matrix)
-         PRINT *, '************************'
 
          CALL sum_up_and_integrate(qs_env, ks_matrix, rho, my_rho, vppl_rspace, &
                                    v_rspace_new, v_rspace_new_aux_fit, v_tau_rspace, v_tau_rspace_aux_fit, &
                                    v_sic_rspace, v_spin_ddapc_rest_r, v_sccs_rspace, v_rspace_embed, &
                                    cdft_control, calculate_forces)
 
-         PRINT *, '************************'
-         PRINT *, 'ks_matrix(1,ispin)%matrix 3 (after adding v_H for RIDFT after sum_up_and_integrate)'
-         CALL dbcsr_print(ks_matrix(1,1)%matrix)
-         PRINT *, '************************' 
-
-         PRINT *, 'matrix_h(1,1)%matrix before RIDFT Hartree Calculation'
-         CALL dbcsr_print(matrix_h(1,1)%matrix)
-         PRINT *, '--------------------'
-
-         
          CALL dbcsr_release(v_ao_dbcsr)              
 
 
@@ -1435,7 +1171,7 @@ CONTAINS
       ELSE
          IF (do_hfx) THEN
             IF (.FALSE.) THEN
-               CPWARN("KS matrix not longer correct. Check possible problems with property calculations!")
+               CPWARN("KS matrix no longer correct. Check possible problems with property calculations!")
             END IF
          END IF
       END IF ! .NOT. just energy
@@ -1487,8 +1223,6 @@ CONTAINS
             CALL qmmm_modify_hartree_pot(v_hartree=v_hartree_rspace, &
                                          v_qmmm=vee, scale=-1.0_dp)
          END IF
-         !JS remove print:
-         PRINT *, '*integrate_vhg0_rspace*'
          CALL integrate_vhg0_rspace(qs_env, v_hartree_rspace, para_env, calculate_forces)
 
          ! !JS remove 
@@ -1509,12 +1243,6 @@ CONTAINS
       END IF
 
       IF (gapw .OR. gapw_xc .OR. ridft) THEN
-         !JS maybe unnecessary for RIDFT, check if rho_ao equals the rho from RIDFT 
-         PRINT *, '--------------------'
-         PRINT *, 'Before update ks_atom'
-         PRINT *, 'rho_ao'
-         CALL dbcsr_print(rho_ao(1,1)%matrix)
-         PRINT *, '--------------------'
          ! Single atom contributions in the KS matrix ***
          CALL update_ks_atom(qs_env, ks_matrix, rho_ao, calculate_forces)
          IF (dft_control%do_admm) THEN

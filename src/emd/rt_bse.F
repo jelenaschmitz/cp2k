@@ -369,13 +369,6 @@ CONTAINS
       ! Get the rho from fm_MOS
       ! Uses real orbitals only - no kpoints
       ALLOCATE (occupations(rtbse_env%n_ao))
-      !JS remove
-      ! PRINT *, '--------------------'
-      ! PRINT *, ' dbcsr_print(rtbse_env%rho_dbcsr)'
-      ! CALL dbcsr_print(rtbse_env%rho_dbcsr)
-      ! PRINT *, '--------------------'
-      ! PRINT *, '--------------------'
-      ! PRINT *, 'RT-BSE Temp fm_mo_coeff_Gamma fm'
       CALL get_mo_set(mo_set=mos(1), mo_coeff=mo_coeff_ri, nao=n_ao, homo=homo)
       blacs_env => mo_coeff_ri%matrix_struct%context
       CALL cp_fm_struct_create(fmstruct=rho_fm_struct, context=blacs_env,&
@@ -383,9 +376,7 @@ CONTAINS
       CALL cp_fm_create(temp_print_fm, rho_fm_struct)
       ! CALL cp_fm_to_fm(bs_env%fm_mo_coeff_Gamma(1), temp_print_fm)
       CALL dbcsr_create(print_temp_dbcsr,'print_temp_dbcsr', template = rtbse_env%rho_dbcsr)
-      ! CALL copy_fm_to_dbcsr(temp_print_fm, print_temp_dbcsr)
-      ! CALL dbcsr_print(print_temp_dbcsr)
-      ! PRINT *, '--------------------'
+      
       ! Iterate over both spins
       DO i = 1, rtbse_env%n_spin
          occupations(:) = 0.0_dp
@@ -401,25 +392,6 @@ CONTAINS
          ! Save the reference value for the case of delta kick
          CALL cp_cfm_to_cfm(rtbse_env%rho(i), rtbse_env%rho_orig(i))
       END DO
-      !JS remove 
-      PRINT *, '--------------------'
-      PRINT *, 'Temp rtbse_env%real_workspace(1) 1 fm'
-      CALL cp_fm_to_fm(rtbse_env%real_workspace(1), temp_print_fm)
-      CALL copy_fm_to_dbcsr(temp_print_fm, print_temp_dbcsr)
-      CALL dbcsr_print(print_temp_dbcsr)
-      PRINT *, '--------------------'
-      PRINT *, '--------------------'
-      PRINT *, 'Temp rtbse_env%real_workspace(2) 2 fm'
-      CALL cp_fm_to_fm(rtbse_env%real_workspace(2), temp_print_fm)
-      CALL copy_fm_to_dbcsr(temp_print_fm, print_temp_dbcsr)
-      CALL dbcsr_print(print_temp_dbcsr)
-      PRINT *, '--------------------'
-      PRINT *, '--------------------'
-      PRINT *, 'Temp rtbse_env%rho(1) fm'
-      CALL cp_cfm_to_fm(rtbse_env%rho(1), mtargetr=temp_print_fm)
-      CALL copy_fm_to_dbcsr(temp_print_fm, print_temp_dbcsr)
-      CALL dbcsr_print(print_temp_dbcsr)
-      PRINT *, '--------------------'
       DEALLOCATE (occupations)
       ! If the restart field is provided, overwrite rho from restart
       IF (rtbse_env%dft_control%rtp_control%initial_wfn == use_rt_restart) THEN
@@ -473,11 +445,6 @@ CONTAINS
       ! ****** START HARTREE POTENTIAL REFERENCE CALCULATION
       ! Calculate Coulomb RI elements, necessary for Hartree calculation
       CALL init_hartree(rtbse_env, rtbse_env%v_dbcsr)
-      !JS remove 
-      PRINT *, '--------------------'
-      PRINT *, 'RTBSE rtbse_env%v_dbcsr final'
-      CALL dbcsr_print(rtbse_env%v_dbcsr)
-      PRINT *, '--------------------'
       IF (rtbse_env%ham_reference_type == rtp_bse_ham_g0w0) THEN
          ! In a non-HF calculation, copy the actual correlation part of the interaction
          CALL copy_fm_to_dbcsr(bs_env%fm_W_MIC_freq_zero, rtbse_env%w_dbcsr)
@@ -494,16 +461,6 @@ CONTAINS
          CALL get_hartree(rtbse_env, rtbse_env%rho_orig(i), rtbse_env%hartree_curr(i))
          ! Scaling by spin degeneracy
          CALL cp_fm_scale(rtbse_env%spin_degeneracy, rtbse_env%hartree_curr(i))
-         PRINT *, '--------------------'
-         PRINT *, 'rtbse_env%v_dbcsr'
-         CALL dbcsr_copy(print_temp_dbcsr, rtbse_env%v_dbcsr)
-         CALL dbcsr_print(print_temp_dbcsr)
-         PRINT *, '--------------------'
-         PRINT *, '--------------------'
-         PRINT *, 'rtbse_env%hartree_curr(i)'
-         CALL copy_fm_to_dbcsr(rtbse_env%hartree_curr(i), print_temp_dbcsr)
-         CALL dbcsr_print(print_temp_dbcsr)
-         PRINT *, '--------------------'
          ! Subtract the reference from the reference Hamiltonian
          CALL cp_fm_to_cfm(msourcer=rtbse_env%hartree_curr(i), mtarget=rtbse_env%ham_workspace(1))
          CALL cp_cfm_scale_and_add(CMPLX(1.0, 0.0, kind=dp), rtbse_env%ham_reference(i), &

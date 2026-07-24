@@ -341,12 +341,6 @@ CONTAINS
             ELSE
                CYCLE
             END IF
-            !JS
-            !core_radius =1.0E10_dp
-            !alpha_c = 1.0E-10_dp
-            !core_charge = 1.0E-10_dp
-            !zeta_c = 1.0_dp
-            PRINT *, core_radius, alpha_c, zeta_c, core_charge
 
             CALL nl_set_sub_iterator(ap_iterator, ikind, kkind, iatom, mepos=mepos)
 

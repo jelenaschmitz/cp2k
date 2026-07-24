@@ -1323,7 +1323,6 @@ CONTAINS
                       v_hartree_rspace=v_rspace, &
                       vee=vee)
       IF (dft_control%qs_control%ridft) THEN
-         PRINT *, 'pw_zero(v_rspace) inside sum_up_and_integrate for ridft'
          CALL pw_zero(v_rspace)
       END IF
 

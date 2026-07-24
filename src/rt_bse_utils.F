@@ -289,8 +289,7 @@ CONTAINS
       INTEGER, DIMENSION(:), POINTER                    :: local_blk_rows, &
                                                            local_blk_cols, &
                                                            row_blk_size, &
-                                                           col_blk_size
-      PRINT *, 'create_hartree_ri_3c started'                                                     
+                                                           col_blk_size                                                    
       ! TODO : Implement option/decision to not precompute all the 3c integrals
       size_mb = REAL(n_ao, kind=dp)*REAL(n_ao, kind=dp)*REAL(n_RI, kind=dp)* &
                 REAL(STORAGE_SIZE(size_mb), kind=dp)/8.0_dp/1024.0_dp/1024.0_dp
@@ -388,7 +387,6 @@ CONTAINS
       REAL(KIND=dp), DIMENSION(3, 3)                     :: hmat
       INTEGER, DIMENSION(3)                              :: periodic
       
-      PRINT *, 'create_2c_coulomb_rep_v started' 
       ALLOCATE (v_dbcsr_a(1))
       ALLOCATE (metric_dbcsr(1))
 
@@ -488,12 +486,6 @@ CONTAINS
       CALL build_2c_integrals(metric_dbcsr, eps_filter, qs_env, nl_2c, &
                               basis_set_RI_p_type, basis_set_RI_p_type, ri_metric, &
                               do_kpoints=.FALSE., regularization_RI=regularization_RI)
-      !JS remove 
-      PRINT *, '--------------------'
-      PRINT *, 'Coulomb v_dbcsr_a'
-      ! !PRINT *, regularization_RI
-      CALL dbcsr_print(v_dbcsr_a(1))
-      ! PRINT *, '--------------------'
       ! nl_2c no longer needed
       CALL release_neighbor_list_sets(nl_2c)
 
@@ -538,7 +530,6 @@ CONTAINS
       DEALLOCATE(para_env_tensor)
       DEALLOCATE(dbcsr_dist_sub)
       DEALLOCATE(row_blk_sizes)
-      PRINT *, 'create_2c_coulomb_rep_v ended' 
 
    END SUBROUTINE create_2c_coulomb_rep_v 
 END MODULE rt_bse_utils
