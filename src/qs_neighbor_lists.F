@@ -296,7 +296,7 @@ CONTAINS
 
       CHARACTER(LEN=2)                                   :: element_symbol, element_symbol2
       CHARACTER(LEN=default_string_length)               :: print_key_path
-      INTEGER                                            :: handle, hfx_pot, ikind, ingp, iw, jkind, &
+      INTEGER                                            :: handle, hfx_pot, iatom, ikind, ingp, iw, jatom, jkind, &
                                                             maxatom, ngp, nkind, zat
       LOGICAL :: all_potential_present, almo, cneo_potential_present, dftb, do_hfx, dokp, &
          gth_potential_present, lri_optbas, lrigpw, mic, molecule_only, nddo, paw_atom, &
@@ -754,7 +754,12 @@ CONTAINS
 
       IF (ridft) THEN
          IF (ANY(erf_present)) THEN
-            erf_reach = SQRT(SUM((cell%hmat(:, 1) + cell%hmat(:, 2) + cell%hmat(:, 3))**2))
+            erf_reach = 0.0_dp
+            DO iatom = 1, SIZE(particle_set)
+               DO jatom = iatom + 1, SIZE(particle_set)
+                  erf_reach = MAX(erf_reach, SQRT(SUM((particle_set(iatom)%r - particle_set(jatom)%r)**2)))
+               END DO
+            END DO
             DO ikind = 1, nkind
                IF (erf_present(ikind)) erf_radius(ikind) = erf_reach
             END DO
