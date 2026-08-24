@@ -110,7 +110,6 @@ MODULE rt_bse
                          build_berry_moment_matrix
    USE moments_utils, ONLY: get_reference_point
    USE qs_mo_io, ONLY: read_mo_set_from_restart
-   USE qs_ks_methods, ONLY: qs_ks_build_kohn_sham_matrix
    USE force_env_methods, ONLY: force_env_calc_energy_force
    USE qs_energy_init, ONLY: qs_energies_init
    USE qs_energy_utils, ONLY: qs_energies_properties
@@ -150,6 +149,7 @@ MODULE rt_bse
                         print_etrs_info_header, &
                         print_etrs_info, &
                         print_rtbse_header_info
+   USE rt_bse_utils, ONLY: get_hartree_noenv
    USE qs_ks_types, ONLY: qs_ks_env_type
    USE qs_integrate_potential_product, ONLY: integrate_v_rspace
    USE qs_collocate_density, ONLY: calculate_rho_elec
@@ -180,8 +180,7 @@ MODULE rt_bse
          get_sigma_noenv
    END INTERFACE
    INTERFACE get_hartree
-      MODULE PROCEDURE get_hartree_env, &
-         get_hartree_noenv
+      MODULE PROCEDURE get_hartree_env
    END INTERFACE
 
 CONTAINS
@@ -1243,162 +1242,6 @@ CONTAINS
                              rtbse_env%n_RI, bs_env%sizes_RI, &
                              para_env, rtbse_env%rho_dbcsr, rtbse_env%v_ao_dbcsr)
    END SUBROUTINE get_hartree_env
-! **************************************************************************************************
-!> \brief Calculates the Hartree matrix in the atomic orbital basis, given a density matrix, in local arrays
-!>        Calculates the values for single spin species present in given rho
-!> \param v_fm Hartree potential in atomic orbital basis - is overwritten by the updated potential
-!> \param rho_fm Density matrix corresponding to single spin species, in atomic orbital basis
-!> \param int_3c Previously allocated array (best to use create_hartree_ri_3c) for 3c integrals
-!> \param v_dbcsr Previously calculated 2c Coulomb repulsion between RI orbitals
-!> \param n_RI Number of RI basis orbitals
-!> \param sizes_RI Number of RI basis orbitals per atom
-!> \param para_env MPI Parallel environment (used for summation across ranks)
-!> \param rho_dbcsr Previously created dbcsr matrix, used as workspace
-!> \param v_ao_dbcsr Previously created dbcsr matrix, used as workspace
-!> \author Stepan Marek
-!> \date 01.2025
-! **************************************************************************************************
-   SUBROUTINE get_hartree_noenv(v_fm, rho_fm, int_3c, v_dbcsr, n_RI, sizes_RI, para_env, rho_dbcsr, v_ao_dbcsr)
-      TYPE(cp_fm_type)                                   :: v_fm
-      TYPE(cp_cfm_type), INTENT(IN)                      :: rho_fm
-      REAL(kind=dp), DIMENSION(:, :, :), POINTER         :: int_3c
-      TYPE(dbcsr_type)                                   :: v_dbcsr
-      INTEGER                                            :: n_RI
-      INTEGER, DIMENSION(:)                              :: sizes_RI
-      TYPE(mp_para_env_type), POINTER                    :: para_env
-      TYPE(dbcsr_type)                                   :: rho_dbcsr, v_ao_dbcsr
-      CHARACTER(len=*), PARAMETER                        :: routineN = "get_hartree"
-      TYPE(dbcsr_iterator_type)                          :: iterator_matrix
-      INTEGER                                            :: i, j, k, n, nblocks, ind_1, ind_2, row_offset, col_offset, &
-                                                            row_size, col_size, j_n_AO, k_n_AO, i_n_RI, &
-                                                            ri_offset, ind_i, handle
-      REAL(kind=dp), DIMENSION(:), ALLOCATABLE           :: Pvector, Qvector
-      REAL(kind=dp), DIMENSION(:, :), POINTER            :: block_matrix
-      INTEGER                                            :: nblkrows_local, nblkcols_local, j_blk, k_blk, j_offset, k_offset
-      INTEGER, DIMENSION(:), POINTER                     :: local_blk_rows, local_blk_cols
-      LOGICAL                                            :: found
-
-      MARK_USED(i_n_RI)
-      MARK_USED(ri_offset)
-      MARK_USED(ind_i)
-
-      ! No memory optimisation so far - calculate all 3cs an all ranks
-      ! Importantly - dbcsr blocks are ordered by atoms - i.e. ethene with 6 atoms will have 6x6 block structure
-      ! Number of basis states on each basis set is known is post_scf_bandstructure env
-
-      CALL timeset(routineN, handle)
-
-      ! Allocate the Q and Pvector on each rank
-      ALLOCATE (Qvector(n_RI), source=0.0_dp)
-      ALLOCATE (Pvector(n_RI), source=0.0_dp)
-
-      ! First step - analyze the structure of copied dbcsr matrix on all ranks
-      CALL dbcsr_clear(rho_dbcsr)
-      ! Only the real part of the density matrix contributes
-      ! Use v_fm as workspace
-      CALL cp_cfm_to_fm(msource=rho_fm, mtargetr=v_fm)
-      CALL copy_fm_to_dbcsr(v_fm, rho_dbcsr)
-      j_offset = 0
-      CALL dbcsr_get_info(rho_dbcsr, nblkrows_local=nblkrows_local, nblkcols_local=nblkcols_local, &
-                          local_rows=local_blk_rows, local_cols=local_blk_cols)
-      DO j_blk = 1, nblkrows_local
-         k_offset = 0
-         DO k_blk = 1, nblkcols_local
-            ! Check whether we can retrieve the rho block
-            ! TODO : Handle transposed case?
-            CALL dbcsr_get_block_p(rho_dbcsr, local_blk_rows(j_blk), local_blk_cols(k_blk), &
-                                   block=block_matrix, found=found, row_size=row_size, col_size=col_size)
-            ! If the block is not found, then the density matrix here has below threshold values
-            IF (.NOT. found) CYCLE
-            ! With the block retrieved, add its contributions to the Q-vector
-            !$OMP PARALLEL DO DEFAULT(none) PRIVATE(i,j,k) &
-            !$OMP SHARED(n_RI, row_size, col_size, Qvector, int_3c, j_offset, k_offset, block_matrix)
-            DO i = 1, n_RI
-               DO j = 1, row_size
-                  DO k = 1, col_size
-                     Qvector(i) = Qvector(i) + int_3c(j_offset + j, k_offset + k, i)*block_matrix(j, k)
-                  END DO
-               END DO
-            END DO
-            !$OMP END PARALLEL DO
-            ! Increment k-offset - setup for the next block
-            k_offset = k_offset + col_size
-         END DO
-         ! Increments the j-offset - row_size is carried over from the last iteration
-         j_offset = j_offset + row_size
-      END DO
-      ! Now, each rank has contributions from D_jk within its scope
-      ! Need to sum over different ranks to get the total vector on all ranks
-      CALL para_env%sum(Qvector)
-      ! Once this is done, Pvector is current on all ranks
-      ! Continue with V_PQ summation
-      nblocks = dbcsr_get_num_blocks(v_dbcsr)
-      CALL dbcsr_iterator_start(iterator_matrix, v_dbcsr)
-      DO n = 1, nblocks
-         ! TODO : Try OMP parallelisation over different blocks - expect many more available speedup for large systems
-         CALL dbcsr_iterator_next_block(iterator_matrix, ind_1, ind_2, block_matrix, &
-                                        row_offset=row_offset, col_offset=col_offset, row_size=row_size, col_size=col_size)
-         ! TODO : Better names for RI
-         j_n_AO = sizes_RI(ind_1)
-         k_n_AO = sizes_RI(ind_2)
-         ! The allocations are as follows
-         !$OMP PARALLEL DO DEFAULT(none) PRIVATE(j,k) &
-         !$OMP SHARED(block_matrix, Pvector, Qvector,j_n_AO,k_n_AO,row_offset,col_offset)
-         DO j = 1, j_n_AO
-            DO k = 1, k_n_AO
-               Pvector(j + row_offset - 1) = Pvector(j + row_offset - 1) + block_matrix(j, k)*Qvector(k + col_offset - 1)
-            END DO
-         END DO
-         !$OMP END PARALLEL DO
-      END DO
-      CALL dbcsr_iterator_stop(iterator_matrix)
-      ! Again, make sure that the P vector is present on all ranks
-      CALL para_env%sum(Pvector)
-      ! Now, for the final trick, iterate over local blocks of v_ao_dbcsr to get the Hartree as dbcsr, then convert to fm
-      ! TODO : Clear or set blocks to zero
-      ! CALL dbcsr_clear(v_ao_dbcsr)
-      j_offset = 0
-      DO j_blk = 1, nblkrows_local
-         k_offset = 0
-         DO k_blk = 1, nblkcols_local
-            ! Check whether we can retrieve the rho block
-            ! TODO : Handle transposed case?
-            CALL dbcsr_get_block_p(v_ao_dbcsr, local_blk_rows(j_blk), local_blk_cols(k_blk), &
-                                   block=block_matrix, found=found, row_size=row_size, col_size=col_size)
-            ! If the block is not found, reserve it
-            IF (.NOT. found) THEN
-               ! Reservations
-               CALL dbcsr_reserve_blocks(v_ao_dbcsr, local_blk_rows(j_blk:j_blk), local_blk_cols(k_blk:k_blk))
-               ! Rerun the getter to get the new block
-               CALL dbcsr_get_block_p(v_ao_dbcsr, local_blk_rows(j_blk), local_blk_cols(k_blk), &
-                                      block=block_matrix, found=found, row_size=row_size, col_size=col_size)
-            END IF
-            ! With the block retrieved, contract with the P vector
-            !$OMP PARALLEL DO DEFAULT(none) PRIVATE(i,j,k) &
-            !$OMP SHARED(row_size, col_size, n_RI, block_matrix, Pvector, int_3c, j_offset, k_offset)
-            DO j = 1, row_size
-               DO k = 1, col_size
-                  block_matrix(j, k) = 0.0_dp
-                  DO i = 1, n_RI
-                     block_matrix(j, k) = block_matrix(j, k) + Pvector(i)*int_3c(j_offset + j, k_offset + k, i)
-                  END DO
-               END DO
-            END DO
-            !$OMP END PARALLEL DO
-            ! Increment k-offset - setup for the next block
-            k_offset = k_offset + col_size
-         END DO
-         ! Increments the j-offset - row_size is carried over from the last iteration
-         j_offset = j_offset + row_size
-      END DO
-      ! Since P vector was present on all the ranks, v_dbcsr_ao has the complete Hartree result
-      ! copy_dbcsr_to_fm should set all values in v_fm to zero
-      CALL copy_dbcsr_to_fm(v_ao_dbcsr, v_fm)
-      DEALLOCATE (Qvector)
-      DEALLOCATE (Pvector)
-
-      CALL timestop(handle)
-   END SUBROUTINE get_hartree_noenv
 ! **************************************************************************************************
 !> \brief Calculates the exponential of a matrix in a generalized eigenvalue problem. Specifically,
 !>        it assumes we have a Hermitian matrix A in the eigenvalue problem AX = BXE, where B is some overlap
