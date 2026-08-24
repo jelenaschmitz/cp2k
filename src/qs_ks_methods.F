@@ -36,7 +36,7 @@ MODULE qs_ks_methods
    USE cp_dbcsr_api,                    ONLY: &
         dbcsr_add, dbcsr_copy, dbcsr_create, dbcsr_filter, dbcsr_get_info, dbcsr_multiply, &
         dbcsr_p_type, dbcsr_release, dbcsr_set, dbcsr_type, dbcsr_type_antisymmetric, &
-        dbcsr_type_symmetric
+        dbcsr_type_symmetric, dbcsr_create
    USE cp_dbcsr_cp2k_link,              ONLY: cp_dbcsr_alloc_block_from_nbl
    USE cp_dbcsr_operations,             ONLY: dbcsr_allocate_matrix_set,&
                                               dbcsr_copy_columns_hack
@@ -128,6 +128,8 @@ MODULE qs_ks_methods
    USE qs_scf_types,                    ONLY: qs_scf_env_type
    USE qs_vxc,                          ONLY: qs_vxc_create
    USE qs_vxc_atom,                     ONLY: calculate_vxc_atom
+   USE ri_dft_utils,                    ONLY: get_hartree_and_core_contributions_energy,&
+                                              init_ridft
    USE rtp_admm_methods,                ONLY: rtp_admm_calc_rho_aux,&
                                               rtp_admm_merge_ks_matrix
    USE se_fock_matrix,                  ONLY: build_se_fock_matrix
@@ -136,6 +138,7 @@ MODULE qs_ks_methods
    USE tblite_ks_matrix,                ONLY: build_tblite_ks_matrix
    USE virial_types,                    ONLY: virial_type
    USE xtb_ks_matrix,                   ONLY: build_xtb_ks_matrix
+   USE pw_poisson_types,                ONLY: pw_poisson_none
 #include "./base/base_uses.f90"
 
    IMPLICIT NONE
@@ -188,7 +191,7 @@ CONTAINS
       INTEGER                                            :: handle, iatom, img, ispin, nimages, &
                                                             nspins
       LOGICAL :: do_adiabatic_rescaling, do_ddapc, do_hfx, do_ppl, dokp, gapw, gapw_xc, &
-         hfx_treat_lsd_in_core, just_energy_xc, lrigpw, my_print, rigpw, use_virial
+         hfx_treat_lsd_in_core, just_energy_xc, lrigpw, my_print, ridft, rigpw, use_virial
       REAL(KIND=dp)                                      :: ecore_ppl, edisp, ee_ener, ekin_mol, &
                                                             mulliken_order_p, vscale
       REAL(KIND=dp), DIMENSION(3, 3)                     :: h_stress, pv_loc
@@ -198,7 +201,8 @@ CONTAINS
       TYPE(cp_logger_type), POINTER                      :: logger
       TYPE(dbcsr_p_type), DIMENSION(:), POINTER          :: ksmat, matrix_vxc, mo_derivs
       TYPE(dbcsr_p_type), DIMENSION(:, :), POINTER       :: ks_matrix, ks_matrix_im, matrix_h, &
-                                                            matrix_h_im, matrix_s, my_rho, rho_ao
+                                                            matrix_h_im, matrix_s, matrix_t, &
+                                                            my_rho, rho_ao
       TYPE(dft_control_type), POINTER                    :: dft_control
       TYPE(ecoul_1center_type), DIMENSION(:), POINTER    :: ecoul_1c
       TYPE(harris_type), POINTER                         :: harris_env
@@ -260,7 +264,8 @@ CONTAINS
                       rho=rho, &
                       rho_core=rho_core, &
                       rho_xc=rho_xc, &
-                      energy=energy)
+                      energy=energy, &
+                      kinetic_kp=matrix_t)
 
       CALL qs_rho_get(rho, rho_r=rho_r, rho_ao_kp=rho_ao)
 
@@ -336,6 +341,11 @@ CONTAINS
       ! gets the tmp grids
       CALL pw_env_get(pw_env, auxbas_pw_pool=auxbas_pw_pool, poisson_env=poisson_env)
 
+      ridft = dft_control%qs_control%ridft
+      IF (ridft) THEN 
+         CALL init_ridft(qs_env, poisson_env)
+      END IF
+
       IF (gapw .AND. (poisson_env%parameters%solver .EQ. pw_poisson_implicit)) THEN
          CPABORT("The implicit Poisson solver cannot be used in conjunction with GAPW.")
       END IF
@@ -354,7 +364,7 @@ CONTAINS
                                            "PRINT%DETAILED_ENERGY"), &
                 cp_p_file) .AND. &
           (.NOT. gapw) .AND. (.NOT. gapw_xc) .AND. &
-          (.NOT. (poisson_env%parameters%solver .EQ. pw_poisson_implicit))) THEN
+          (.NOT. (poisson_env%parameters%solver == pw_poisson_implicit)) .AND. (.NOT. ridft)) THEN
          CALL pw_zero(rho_tot_gspace)
          CALL calc_rho_tot_gspace(rho_tot_gspace, qs_env, rho, skip_nuclear_density=.TRUE.)
          CALL pw_poisson_solve(poisson_env, rho_tot_gspace, energy%e_hartree, &
@@ -708,6 +718,11 @@ CONTAINS
          ! Pointing my_rho to the density matrix rho_ao
          my_rho => rho_ao
 
+         IF (ridft) THEN
+            CALL get_hartree_and_core_contributions_energy(qs_env, rho_ao, energy, ks_matrix, &
+                                                          rho_tot_gspace,v_hartree_rspace)
+         END IF
+
          CALL sum_up_and_integrate(qs_env, ks_matrix, rho, my_rho, vppl_rspace, &
                                    v_rspace_new, v_rspace_new_aux_fit, v_tau_rspace, v_tau_rspace_aux_fit, &
                                    v_sic_rspace, v_spin_ddapc_rest_r, v_sccs_rspace, v_rspace_embed, &
@@ -745,7 +760,7 @@ CONTAINS
       ELSE
          IF (do_hfx) THEN
             IF (.FALSE.) THEN
-               CPWARN("KS matrix not longer correct. Check possible problems with property calculations!")
+               CPWARN("KS matrix no longer correct. Check possible problems with property calculations!")
             END IF
          END IF
       END IF ! .NOT. just energy
@@ -812,7 +827,7 @@ CONTAINS
          END IF
       END IF
 
-      IF (gapw .OR. gapw_xc) THEN
+      IF (gapw .OR. gapw_xc .OR. ridft) THEN
          ! Single atom contributions in the KS matrix ***
          CALL update_ks_atom(qs_env, ks_matrix, rho_ao, calculate_forces)
          IF (dft_control%do_admm) THEN
@@ -929,6 +944,35 @@ CONTAINS
                      energy%sccs_pol + energy%cdft + energy%exc1_aux_fit
 
       IF (dft_control%apply_embed_pot) energy%total = energy%total + energy%embed_corr
+
+      !JS Remove for final RIDFt version:
+      PRINT *, 'RI-DFT energy influence check|  energy%core_overlap: ', energy%core_overlap
+      PRINT *, 'RI-DFT energy influence check|  energy%core_self: ', energy%core_self
+      PRINT *, 'RI-DFT energy influence check|  energy%core_cneo: ', energy%core_cneo
+      PRINT *, 'RI-DFT energy influence check|  energy%core: ', energy%core
+      PRINT *, 'RI-DFT energy influence check|  energy%hartree: ', energy%hartree
+      PRINT *, 'RI-DFT energy influence check|  energy%hartree_1c: ', energy%hartree_1c
+      PRINT *, 'RI-DFT energy influence check|  energy%exc: ', energy%exc
+      PRINT *, 'RI-DFT energy influence check|  energy%exc1: ', energy%exc1
+      PRINT *, 'RI-DFT energy influence check|  energy%ex: ', energy%ex
+      PRINT *, 'RI-DFT energy influence check|  energy%dispersion: ', energy%dispersion
+      PRINT *, 'RI-DFT energy influence check|  energy%gcp: ', energy%gcp
+      PRINT *, 'RI-DFT energy influence check|  energy%qmmm_el: ', energy%qmmm_el
+      PRINT *, 'RI-DFT energy influence check|  energy%mulliken: ', energy%mulliken
+      PRINT *, 'RI-DFT energy influence check|  energy%s2_restraint: ', energy%s2_restraint
+      PRINT *, 'RI-DFT energy influence check|  energy%dft_plus_u: ', energy%dft_plus_u
+      PRINT *, 'RI-DFT energy influence check|  energy%kTS: ', energy%kTS
+      PRINT *, 'RI-DFT energy influence check|  energy%efield: ', energy%efield
+      PRINT *, 'RI-DFT energy influence check|  energy%efield_core: ', energy%efield_core
+      PRINT *, 'RI-DFT energy influence check|  energy%ee: ', energy%ee
+      PRINT *, 'RI-DFT energy influence check|  energy%ee_core: ', energy%ee_core
+      PRINT *, 'RI-DFT energy influence check|  energy%exc_aux_fit: ', energy%exc_aux_fit
+      PRINT *, 'RI-DFT energy influence check|  energy%image_charge: ', energy%image_charge
+      PRINT *, 'RI-DFT energy influence check|  energy%sccs_pol: ', energy%sccs_pol
+      PRINT *, 'RI-DFT energy influence check|  energy%cdft: ', energy%cdft
+      PRINT *, 'RI-DFT energy influence check|  energy%exc1_aux_fit: ', energy%exc1_aux_fit
+      PRINT *, 'RI-DFT energy influence check|  energy%total: ', energy%total
+      PRINT *, 'RI-DFT energy influence check|  energy%embed_corr: ', energy%embed_corr
 
       IF (abnormal_value(energy%total)) &
          CPABORT("KS energy is an abnormal value (NaN/Inf).")
