@@ -61,7 +61,8 @@ MODULE input_cp2k_print_dft
       do_method_am1, do_method_dftb, do_method_gapw, do_method_gapw_xc, do_method_gpw, &
       do_method_lrigpw, do_method_mndo, do_method_mndod, do_method_ofgpw, do_method_pdg, &
       do_method_pm3, do_method_pm6, do_method_pm6fm, do_method_pnnl, do_method_rigpw, &
-      do_method_rm1, do_method_xtb, do_pade, do_potential_coulomb, do_potential_id, &
+      do_method_ridft, do_method_rm1, do_method_xtb, &
+      do_pade, do_potential_coulomb, do_potential_id, &
       do_potential_short, do_potential_truncated, do_ppl_analytic, do_ppl_grid, &
       do_pwgrid_ns_fullspace, do_pwgrid_ns_halfspace, do_pwgrid_spherical, do_s2_constraint, &
       do_s2_restraint, do_se_is_kdso, do_se_is_kdso_d, do_se_is_slater, do_se_lr_ewald, &
@@ -288,6 +289,15 @@ CONTAINS
                           name="sac_ae", &
                           description="Activates the printing of the orbital "// &
                           "nuclear attraction neighbor lists (erfc potential)", &
+                          default_l_val=.FALSE., &
+                          lone_keyword_l_val=.TRUE.)
+      CALL section_add_keyword(print_key, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, &
+                          name="sac_erf", &
+                          description="Activates the printing of the orbital "// &
+                          "nuclear attraction neighbor lists (erf potential)", &
                           default_l_val=.FALSE., &
                           lone_keyword_l_val=.TRUE.)
       CALL section_add_keyword(print_key, keyword)

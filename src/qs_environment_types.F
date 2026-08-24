@@ -342,6 +342,7 @@ CONTAINS
 !> \param qmmm ...
 !> \param qmmm_periodic ...
 !> \param sac_ae ...
+!> \param sac_erf ...
 !> \param sac_ppl ...
 !> \param sac_lri ...
 !> \param sap_ppnl ...
@@ -496,7 +497,7 @@ CONTAINS
 !> \version 1.0
 ! **************************************************************************************************
    SUBROUTINE get_qs_env(qs_env, atomic_kind_set, qs_kind_set, cell, super_cell, cell_ref, use_ref_cell, kpoints, &
-                         dft_control, mos, sab_orb, sab_all, qmmm, qmmm_periodic, sac_ae, sac_ppl, sac_lri, &
+                         dft_control, mos, sab_orb, sab_all, qmmm, qmmm_periodic, sac_ae, sac_erf, sac_ppl, sac_lri, &
                          sap_ppnl, sab_vdw, sab_scp, sap_oce, sab_lrc, sab_se, sab_xtbe, sab_tbe, sab_core, &
                          sab_xb, sab_xtb_pp, sab_xtb_nonbond, sab_almo, &
                          sab_kp, sab_kp_nosym, sab_cneo, particle_set, energy, force, &
@@ -537,9 +538,9 @@ CONTAINS
       TYPE(neighbor_list_set_p_type), DIMENSION(:), &
          OPTIONAL, POINTER                               :: sab_orb, sab_all
       LOGICAL, OPTIONAL                                  :: qmmm, qmmm_periodic
-      TYPE(neighbor_list_set_p_type), DIMENSION(:), OPTIONAL, POINTER :: sac_ae, sac_ppl, sac_lri, &
-         sap_ppnl, sab_vdw, sab_scp, sap_oce, sab_lrc, sab_se, sab_xtbe, sab_tbe, sab_core, &
-         sab_xb, sab_xtb_pp, sab_xtb_nonbond, sab_almo, sab_kp, sab_kp_nosym, sab_cneo
+      TYPE(neighbor_list_set_p_type), DIMENSION(:), OPTIONAL, POINTER :: sac_ae, sac_erf, sac_ppl, &
+         sac_lri, sap_ppnl, sab_vdw, sab_scp, sap_oce, sab_lrc, sab_se, sab_xtbe, sab_tbe, &
+         sab_core, sab_xb, sab_xtb_pp, sab_xtb_nonbond, sab_almo, sab_kp, sab_kp_nosym, sab_cneo
       TYPE(particle_type), DIMENSION(:), OPTIONAL, &
          POINTER                                         :: particle_set
       TYPE(qs_energy_type), OPTIONAL, POINTER            :: energy
@@ -824,6 +825,7 @@ CONTAINS
                       sab_scp=sab_scp, &
                       sab_vdw=sab_vdw, &
                       sac_ae=sac_ae, &
+                      sac_erf=sac_erf, &
                       sac_ppl=sac_ppl, &
                       sac_lri=sac_lri, &
                       sap_ppnl=sap_ppnl, &
