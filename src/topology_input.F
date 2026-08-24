@@ -90,6 +90,8 @@ CONTAINS
       CALL section_vals_val_get(topology_section, "EXCLUDE_EI", i_val=topology%exclude_ei)
       CALL section_vals_val_get(topology_section, "GENERATE%BONDPARM", i_val=topology%bondparm_type)
       CALL section_vals_val_get(topology_section, "GENERATE%BONDPARM_FACTOR", r_val=topology%bondparm_factor)
+      CALL section_vals_val_get(topology_section, &
+                                "IGNORE_CELL_SIZE_LIMITS", l_val=topology%ignore_cell_size_limits)
       CALL timestop(handle)
    END SUBROUTINE read_topology_section
 

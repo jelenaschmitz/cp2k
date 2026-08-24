@@ -108,7 +108,8 @@ CONTAINS
                                                             natom_of_kind, wlist
       INTEGER, DIMENSION(:, :), POINTER                  :: pairs
       LOGICAL :: autogen, check, disable_exclusion_lists, do_center, explicit, found, &
-         my_ignore_outside_box, my_qmmm, present_12_excl_ei_list, present_12_excl_vdw_list
+         ignore_cell_size_limits, my_ignore_outside_box, my_qmmm, present_12_excl_ei_list, &
+         present_12_excl_vdw_list
       REAL(KIND=dp)                                      :: bounds(2, 3), cdims(3), dims(3), qeff, &
                                                             vec(3)
       REAL(KIND=dp), DIMENSION(:), POINTER               :: charge, cpoint, mass
@@ -130,6 +131,8 @@ CONTAINS
       iw = cp_print_key_unit_nr(logger, subsys_section, "PRINT%TOPOLOGY_INFO/UTIL_INFO", &
                                 extension=".subsysLog")
       topology_section => section_vals_get_subs_vals(subsys_section, "TOPOLOGY")
+      CALL section_vals_val_get(topology_section, &
+                                "IGNORE_CELL_SIZE_LIMITS", l_val=ignore_cell_size_limits)
       CALL timeset(routineN, handle)
 
       my_qmmm = .FALSE.
@@ -335,7 +338,12 @@ CONTAINS
             check = check .AND. (dims(i) < cdims(i))
          END IF
       END DO
-      my_ignore_outside_box = .FALSE.
+      my_ignore_outside_box = ignore_cell_size_limits
+      IF (my_ignore_outside_box) &
+         PRINT *, 'Warning! You turned on that the program ignores if elements/part '// &
+         'of your system are outside the Cell given in subsystem! '// &
+         'This can lead to wriong results and is only intended '// &
+         'to be paired with RIDFT and partial charges outside the cell. '
       IF (PRESENT(ignore_outside_box)) my_ignore_outside_box = ignore_outside_box
       IF (.NOT. my_ignore_outside_box .AND. .NOT. check) &
          CALL cp_abort(__LOCATION__, &
