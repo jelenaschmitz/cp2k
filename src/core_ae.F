@@ -10,6 +10,7 @@
 !> \par History
 !>      - core_ppnl refactored from qs_core_hamiltonian [Joost VandeVondele, 2008-11-01]
 !>      - adapted for nuclear attraction [jhu, 2009-02-24]
+!>      - added build_core_erf_ridft for RI-DFT method in qs_ks_methods [Jelena Schmitz, 2026-08-14]
 ! **************************************************************************************************
 MODULE core_ae
    USE ai_verfc,                        ONLY: verfc
@@ -19,10 +20,16 @@ MODULE core_ae
    USE basis_set_types,                 ONLY: gto_basis_set_p_type,&
                                               gto_basis_set_type
    USE cp_dbcsr_api,                    ONLY: dbcsr_add,&
+                                              dbcsr_copy,&
                                               dbcsr_get_block_p,&
-                                              dbcsr_p_type
+                                              dbcsr_p_type,&
+                                              dbcsr_release,&
+                                              dbcsr_set,&
+                                              dbcsr_type
+   USE cp_dbcsr_contrib,                ONLY: dbcsr_dot
    USE external_potential_types,        ONLY: all_potential_type,&
                                               get_potential,&
+                                              gth_potential_type,&
                                               sgp_potential_type
    USE kinds,                           ONLY: dp,&
                                               int_8
@@ -44,6 +51,7 @@ MODULE core_ae
                                               nl_sub_iterate
    USE virial_methods,                  ONLY: virial_pair_force
    USE virial_types,                    ONLY: virial_type
+   USE external_potential_types,        ONLY: set_potential
 
 !$ USE OMP_LIB, ONLY: omp_get_max_threads, omp_get_thread_num, omp_get_num_threads
 !$ USE OMP_LIB, ONLY: omp_lock_kind, &
@@ -58,7 +66,7 @@ MODULE core_ae
 
    CHARACTER(len=*), PARAMETER, PRIVATE :: moduleN = 'core_ae'
 
-   PUBLIC :: build_core_ae, build_erfc, verfc_force
+   PUBLIC :: build_core_ae, build_core_erf_ridft, build_erfc, verfc_force
 
 CONTAINS
 
@@ -502,6 +510,301 @@ CONTAINS
       CALL timestop(handle)
 
    END SUBROUTINE build_core_ae
+
+! **************************************************************************************************
+!> \brief Compute the nuclear-Gaussian erf contribution for RIDFT
+!>        Evaluates <mu| -Z*erf(sqrt(alpha)*|r-R_A|)/r |nu> for all nuclear centers A
+!>        and adds the result to the KS matrix. Returns the energy trace Tr[rho * V_nuc_erf].
+!> \param matrix_ks  KS matrix to which V_nuc_erf is added (INOUT)
+!> \param rho_ao   Density matrix for energy trace (IN)
+!> \param e_nuc_erf  Returns Tr[rho * V_nuc_erf] = electron-nuclear erf energy
+!> \param e_nn_erf   Returns sum_{A<B} Z_A*Z_B*erf(sqrt(alpha_AB)*R)/R (OUT)
+!> \param qs_kind_set ...
+!> \param atomic_kind_set ...
+!> \param particle_set ...
+!> \param sab_orb    Orbital-orbital neighbor list
+!> \param sac_ae     Orbital-nuclear neighbor list for all-electron / SGP cores (ERFC potential)
+!> \param sac_ppl    Orbital-nuclear neighbor list for GTH pseudopotential cores (may be NULL)
+!> \param sac_erf ...
+!> \param nimages ...
+!> \param cell_to_index ...
+!> \param basis_type ...
+!> \date 14.08.2026
+!> \author Jelena Schmitz
+!> \note UNKNOWN_COMMENT  Anthropic (2026) Claude assistance was used for creating the build_core_erf_ridft routine 
+! **************************************************************************************************
+   SUBROUTINE build_core_erf_ridft(matrix_ks, rho_ao, e_nuc_erf, e_nn_erf, &
+                                    qs_kind_set, atomic_kind_set, particle_set, &
+                                    sab_orb, sac_ae, sac_ppl, sac_erf, nimages, cell_to_index, basis_type)
+
+      TYPE(dbcsr_p_type), DIMENSION(:, :), POINTER       :: matrix_ks, rho_ao
+      REAL(KIND=dp), INTENT(OUT)                         :: e_nuc_erf, e_nn_erf
+      TYPE(qs_kind_type), DIMENSION(:), POINTER          :: qs_kind_set
+      TYPE(atomic_kind_type), DIMENSION(:), POINTER      :: atomic_kind_set
+      TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
+      TYPE(neighbor_list_set_p_type), DIMENSION(:), &
+         POINTER                                         :: sab_orb, sac_ae, sac_ppl, sac_erf
+      INTEGER, INTENT(IN)                                :: nimages
+      INTEGER, DIMENSION(:, :, :), POINTER               :: cell_to_index
+      CHARACTER(LEN=*), INTENT(IN)                       :: basis_type
+
+      CHARACTER(LEN=*), PARAMETER :: routineN = 'build_core_erf_ridft'
+
+      INTEGER                                            :: handle, iatom, icol, ikind, img, &
+                                                            irow, iset, jatom, jkind, jset, katom, &
+                                                            kkind, ldai, ldsab, maxco, maxl, maxnset, &
+                                                            maxsgf, natom, ncoa, ncob, nij, nkind, &
+                                                            nseta, nsetb, sgfa, sgfb, slot
+      INTEGER, ALLOCATABLE, DIMENSION(:)                 :: kind_of_nn
+      INTEGER, DIMENSION(3)                              :: cellind
+      INTEGER, DIMENSION(:), POINTER                     :: la_max, la_min, lb_max, lb_min, npgfa, &
+                                                            npgfb, nsgfa, nsgfb
+      INTEGER, DIMENSION(:, :), POINTER                  :: first_sgfa, first_sgfb
+      LOGICAL                                            :: dokp, found
+      REAL(KIND=dp)                                      :: alpha_ab_nn, alpha_c, core_charge, &
+                                                            dab, dab_nn, dac, dbc, e_img, &
+                                                            rab2, rac2, rbc2, zeta_c
+      REAL(KIND=dp), DIMENSION(3)                        :: rab_nn
+      REAL(KIND=dp), ALLOCATABLE, DIMENSION(:)           :: alpha_nn, ff, z_nn
+      REAL(KIND=dp), ALLOCATABLE, DIMENSION(:, :)        :: work
+      REAL(KIND=dp), ALLOCATABLE, DIMENSION(:, :, :)     :: hab, verf, vnuc
+      REAL(KIND=dp), DIMENSION(3)                        :: rab, rac, rbc
+      REAL(KIND=dp), DIMENSION(:), POINTER               :: set_radius_a, set_radius_b
+      REAL(KIND=dp), DIMENSION(:, :), POINTER            :: h_block, rpgfa, rpgfb, sphi_a, &
+                                                            sphi_b, zeta, zetb
+      TYPE(dbcsr_type), ALLOCATABLE, DIMENSION(:)        :: v_nuc_erf
+      TYPE(neighbor_list_iterator_p_type), &
+         DIMENSION(:), POINTER                           :: ap_iterator, ap_iterator_ppl, &
+                                                            ap_iterator_erf, iter
+      TYPE(gto_basis_set_type), POINTER                  :: basis_set_a, basis_set_b
+      TYPE(gto_basis_set_p_type), DIMENSION(:), POINTER  :: basis_set_list
+      TYPE(all_potential_type), POINTER                  :: all_potential
+      TYPE(gth_potential_type), POINTER                  :: gth_potential
+      TYPE(sgp_potential_type), POINTER                  :: sgp_potential
+
+      CALL timeset(routineN, handle)
+
+      nkind = SIZE(atomic_kind_set)
+      dokp = (nimages > 1)
+
+      ALLOCATE (basis_set_list(nkind))
+      DO ikind = 1, nkind
+         CALL get_qs_kind(qs_kind_set(ikind), basis_set=basis_set_a, basis_type=basis_type)
+         IF (ASSOCIATED(basis_set_a)) THEN
+            basis_set_list(ikind)%gto_basis_set => basis_set_a
+         ELSE
+            NULLIFY (basis_set_list(ikind)%gto_basis_set)
+         END IF
+      END DO
+
+      CALL get_qs_kind_set(qs_kind_set, basis_type=basis_type, &
+                           maxco=maxco, maxlgto=maxl, maxsgf=maxsgf, maxnset=maxnset)
+      CALL init_orbital_pointers(maxl + 1)
+      ldsab = MAX(maxco, maxsgf)
+      ldai = ncoset(maxl + 1)
+
+      NULLIFY (ap_iterator, ap_iterator_ppl, ap_iterator_erf)
+      IF (ASSOCIATED(sac_ae)) &
+         CALL neighbor_list_iterator_create(ap_iterator, sac_ae, search=.TRUE., nthread=1)
+      IF (ASSOCIATED(sac_ppl)) &
+         CALL neighbor_list_iterator_create(ap_iterator_ppl, sac_ppl, search=.TRUE., nthread=1)
+      IF (ASSOCIATED(sac_erf)) &
+         CALL neighbor_list_iterator_create(ap_iterator_erf, sac_erf, search=.TRUE., nthread=1)
+
+      ALLOCATE (hab(ldsab, ldsab, maxnset*maxnset), work(ldsab, ldsab))
+      ALLOCATE (verf(ldai, ldai, 2*maxl + 1), vnuc(ldai, ldai, 2*maxl + 1), ff(0:2*maxl))
+
+      ALLOCATE (v_nuc_erf(nimages))
+      DO img = 1, nimages
+         CALL dbcsr_copy(v_nuc_erf(img), matrix_ks(1, img)%matrix)
+         CALL dbcsr_set(v_nuc_erf(img), 0.0_dp)
+      END DO
+
+      DO slot = 1, sab_orb(1)%nl_size
+
+         ikind = sab_orb(1)%nlist_task(slot)%ikind
+         jkind = sab_orb(1)%nlist_task(slot)%jkind
+         iatom = sab_orb(1)%nlist_task(slot)%iatom
+         jatom = sab_orb(1)%nlist_task(slot)%jatom
+         cellind(:) = sab_orb(1)%nlist_task(slot)%cell(:)
+         rab(1:3) = sab_orb(1)%nlist_task(slot)%r(1:3)
+
+         basis_set_a => basis_set_list(ikind)%gto_basis_set
+         IF (.NOT. ASSOCIATED(basis_set_a)) CYCLE
+         basis_set_b => basis_set_list(jkind)%gto_basis_set
+         IF (.NOT. ASSOCIATED(basis_set_b)) CYCLE
+
+         first_sgfa => basis_set_a%first_sgf
+         la_max => basis_set_a%lmax
+         la_min => basis_set_a%lmin
+         npgfa => basis_set_a%npgf
+         nseta = basis_set_a%nset
+         nsgfa => basis_set_a%nsgf_set
+         rpgfa => basis_set_a%pgf_radius
+         set_radius_a => basis_set_a%set_radius
+         sphi_a => basis_set_a%sphi
+         zeta => basis_set_a%zet
+         first_sgfb => basis_set_b%first_sgf
+         lb_max => basis_set_b%lmax
+         lb_min => basis_set_b%lmin
+         npgfb => basis_set_b%npgf
+         nsetb = basis_set_b%nset
+         nsgfb => basis_set_b%nsgf_set
+         rpgfb => basis_set_b%pgf_radius
+         set_radius_b => basis_set_b%set_radius
+         sphi_b => basis_set_b%sphi
+         zetb => basis_set_b%zet
+
+         dab = SQRT(SUM(rab*rab))
+
+         IF (dokp) THEN
+            img = cell_to_index(cellind(1), cellind(2), cellind(3))
+         ELSE
+            img = 1
+         END IF
+
+         IF (iatom <= jatom) THEN
+            irow = iatom
+            icol = jatom
+         ELSE
+            irow = jatom
+            icol = iatom
+         END IF
+
+         NULLIFY (h_block)
+         CALL dbcsr_get_block_p(matrix=v_nuc_erf(img), &
+                                row=irow, col=icol, BLOCK=h_block, found=found)
+         CPASSERT(ASSOCIATED(h_block))
+
+         hab = 0.0_dp
+         DO kkind = 1, nkind
+            NULLIFY (all_potential, sgp_potential, gth_potential)
+            CALL get_qs_kind(qs_kind_set(kkind), all_potential=all_potential, &
+                             sgp_potential=sgp_potential, gth_potential=gth_potential)
+            IF (ASSOCIATED(all_potential)) THEN
+               IF (.NOT. ASSOCIATED(ap_iterator)) CYCLE
+               CALL get_potential(potential=all_potential, &
+                                  alpha_core_charge=alpha_c, zeff=zeta_c, &
+                                  ccore_charge=core_charge)
+               iter => ap_iterator
+            ELSE IF (ASSOCIATED(sgp_potential)) THEN
+               IF (.NOT. ASSOCIATED(ap_iterator)) CYCLE
+               CALL get_potential(potential=sgp_potential, &
+                                  alpha_core_charge=alpha_c, zeff=zeta_c, &
+                                  ccore_charge=core_charge)
+               iter => ap_iterator
+            ELSE IF (ASSOCIATED(gth_potential)) THEN
+               IF (.NOT. ASSOCIATED(ap_iterator_erf)) CYCLE
+               CALL get_potential(potential=gth_potential, &
+                                  alpha_core_charge=alpha_c, zeff=zeta_c, &
+                                  ccore_charge=core_charge)
+               iter => ap_iterator_erf
+            ELSE
+               CYCLE
+            END IF
+
+            CALL nl_set_sub_iterator(iter, ikind, kkind, iatom)
+
+            DO WHILE (nl_sub_iterate(iter) == 0)
+               CALL get_iterator_info(iter, jatom=katom, r=rac)
+
+               dac = SQRT(SUM(rac*rac))
+               rbc(:) = rac(:) - rab(:)
+               dbc = SQRT(SUM(rbc*rbc))
+
+               DO iset = 1, nseta
+                  ncoa = npgfa(iset)*ncoset(la_max(iset))
+                  sgfa = first_sgfa(1, iset)
+                  DO jset = 1, nsetb
+                     ncob = npgfb(jset)*ncoset(lb_max(jset))
+                     sgfb = first_sgfb(1, jset)
+                     IF (set_radius_a(iset) + set_radius_b(jset) < dab) CYCLE
+                     rab2 = dab*dab
+                     rac2 = dac*dac
+                     rbc2 = dbc*dbc
+                     nij = jset + (iset - 1)*maxnset
+
+                     CALL verfc( &
+                        la_max(iset), npgfa(iset), zeta(:, iset), rpgfa(:, iset), la_min(iset), &
+                        lb_max(jset), npgfb(jset), zetb(:, jset), rpgfb(:, jset), lb_min(jset), &
+                        alpha_c, MAX(dac, dbc), 0.0_dp, -core_charge, &
+                        rab, rab2, rac, rac2, rbc2, hab(:, :, nij), verf, vnuc, ff(0:))
+                  END DO
+               END DO
+            END DO
+         END DO
+
+         DO iset = 1, nseta
+            ncoa = npgfa(iset)*ncoset(la_max(iset))
+            sgfa = first_sgfa(1, iset)
+            DO jset = 1, nsetb
+               ncob = npgfb(jset)*ncoset(lb_max(jset))
+               sgfb = first_sgfb(1, jset)
+               nij = jset + (iset - 1)*maxnset
+               work(1:ncoa, 1:nsgfb(jset)) = MATMUL(hab(1:ncoa, 1:ncob, nij), &
+                                                    sphi_b(1:ncob, sgfb:sgfb + nsgfb(jset) - 1))
+               IF (iatom <= jatom) THEN
+                  h_block(sgfa:sgfa + nsgfa(iset) - 1, sgfb:sgfb + nsgfb(jset) - 1) = &
+                     h_block(sgfa:sgfa + nsgfa(iset) - 1, sgfb:sgfb + nsgfb(jset) - 1) + &
+                     MATMUL(TRANSPOSE(sphi_a(1:ncoa, sgfa:sgfa + nsgfa(iset) - 1)), &
+                            work(1:ncoa, 1:nsgfb(jset)))
+               ELSE
+                  h_block(sgfb:sgfb + nsgfb(jset) - 1, sgfa:sgfa + nsgfa(iset) - 1) = &
+                     h_block(sgfb:sgfb + nsgfb(jset) - 1, sgfa:sgfa + nsgfa(iset) - 1) + &
+                     MATMUL(TRANSPOSE(work(1:ncoa, 1:nsgfb(jset))), &
+                            sphi_a(1:ncoa, sgfa:sgfa + nsgfa(iset) - 1))
+               END IF
+            END DO
+         END DO
+
+      END DO
+
+      DEALLOCATE (hab, work, verf, vnuc, ff)
+      IF (ASSOCIATED(ap_iterator)) CALL neighbor_list_iterator_release(ap_iterator)
+      IF (ASSOCIATED(ap_iterator_ppl)) CALL neighbor_list_iterator_release(ap_iterator_ppl)
+      IF (ASSOCIATED(ap_iterator_erf)) CALL neighbor_list_iterator_release(ap_iterator_erf)
+      DEALLOCATE (basis_set_list)
+
+      !JS Energy trace + KS update
+      e_nuc_erf = 0.0_dp
+      DO img = 1, nimages
+         CALL dbcsr_dot(rho_ao(1, img)%matrix, v_nuc_erf(img), e_img)
+         e_nuc_erf = e_nuc_erf + e_img
+         CALL dbcsr_add(matrix_ks(1, img)%matrix, v_nuc_erf(img), &
+                        alpha_scalar=1.0_dp, beta_scalar=1.0_dp)
+         CALL dbcsr_release(v_nuc_erf(img))
+      END DO
+      DEALLOCATE (v_nuc_erf)
+
+      natom = SIZE(particle_set)
+      CALL get_atomic_kind_set(atomic_kind_set, kind_of=kind_of_nn)
+      ALLOCATE (alpha_nn(nkind), z_nn(nkind))
+      alpha_nn(:) = 0.0_dp
+      z_nn(:) = 0.0_dp
+      
+      DO ikind = 1, nkind
+         CALL get_qs_kind(qs_kind_set(ikind), zeff=z_nn(ikind), alpha_core_charge=alpha_nn(ikind))
+      END DO
+
+      e_nn_erf = 0.0_dp
+      DO iatom = 1, natom
+         ikind = kind_of_nn(iatom)
+         IF (z_nn(ikind) == 0.0_dp) CYCLE
+         DO jatom = iatom + 1, natom
+            jkind = kind_of_nn(jatom)
+            IF (z_nn(jkind) == 0.0_dp) CYCLE
+            alpha_ab_nn = alpha_nn(ikind)*alpha_nn(jkind)/(alpha_nn(ikind) + alpha_nn(jkind))
+            rab_nn(:) = particle_set(jatom)%r(:) - particle_set(iatom)%r(:)
+            dab_nn = SQRT(SUM(rab_nn*rab_nn))
+            IF (dab_nn > 1.0E-8_dp) &
+               e_nn_erf = e_nn_erf + z_nn(ikind)*z_nn(jkind)*ERF(SQRT(alpha_ab_nn)*dab_nn)/dab_nn
+         END DO
+      END DO
+      DEALLOCATE (kind_of_nn, alpha_nn, z_nn)
+
+      CALL timestop(handle)
+
+   END SUBROUTINE build_core_erf_ridft
 
 ! **************************************************************************************************
 !> \brief ...
