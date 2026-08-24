@@ -26,14 +26,14 @@ MODULE input_cp2k_qs
         do_gapw_log, do_lri_inv, do_lri_inv_auto, do_lri_pseudoinv_diag, do_lri_pseudoinv_svd, &
         do_method_am1, do_method_dftb, do_method_gapw, do_method_gapw_xc, do_method_gpw, &
         do_method_lrigpw, do_method_mndo, do_method_mndod, do_method_ofgpw, do_method_pdg, &
-        do_method_pm3, do_method_pm6, do_method_pm6fm, do_method_pnnl, do_method_rigpw, &
-        do_method_rm1, do_method_xtb, do_ppl_analytic, do_ppl_grid, do_pwgrid_ns_fullspace, &
-        do_pwgrid_ns_halfspace, do_pwgrid_spherical, do_s2_constraint, do_s2_restraint, &
-        do_spin_density, gapw_1c_large, gapw_1c_medium, gapw_1c_orb, gapw_1c_small, &
-        gapw_1c_very_large, gaussian, numerical, slater, wfi_aspc_nr, wfi_frozen_method_nr, &
-        wfi_linear_p_method_nr, wfi_linear_ps_method_nr, wfi_linear_wf_method_nr, &
-        wfi_ps_method_nr, wfi_use_guess_method_nr, wfi_use_prev_p_method_nr, &
-        wfi_use_prev_rho_r_method_nr, wfi_use_prev_wf_method_nr
+        do_method_pm3, do_method_pm6, do_method_pm6fm, do_method_pnnl, do_method_ridft, &
+        do_method_rigpw, do_method_rm1, do_method_xtb, do_ppl_analytic, do_ppl_grid, &
+        do_pwgrid_ns_fullspace, do_pwgrid_ns_halfspace, do_pwgrid_spherical, do_s2_constraint, &
+        do_s2_restraint, do_spin_density, gapw_1c_large, gapw_1c_medium, gapw_1c_orb, &
+        gapw_1c_small, gapw_1c_very_large, gaussian, numerical, slater, wfi_aspc_nr, &
+        wfi_frozen_method_nr, wfi_linear_p_method_nr, wfi_linear_ps_method_nr, &
+        wfi_linear_wf_method_nr, wfi_ps_method_nr, wfi_use_guess_method_nr, &
+        wfi_use_prev_p_method_nr, wfi_use_prev_rho_r_method_nr, wfi_use_prev_wf_method_nr
    USE input_cp2k_distribution,         ONLY: create_distribution_section
    USE input_cp2k_opt,                  ONLY: create_optimize_dmfet,&
                                               create_optimize_embed,&
@@ -435,7 +435,9 @@ CONTAINS
                           description="Specifies the electronic structure method that should be employed", &
                           usage="METHOD GAPW", &
                           enum_c_vals=s2a("GAPW", "GAPW_XC", "GPW", "LRIGPW", "RIGPW", &
-                                    "MNDO", "MNDOD", "AM1", "PM3", "PM6", "PM6-FM", "PDG", "RM1", "PNNL", "DFTB", "xTB", "OFGPW"), &
+                                          "MNDO", "MNDOD", "AM1", "PM3", "PM6", "PM6-FM", &
+                                          "PDG", "RM1", "PNNL", "DFTB", &
+                                          "xTB", "OFGPW", "RIDFT"), &
                           enum_desc=s2a("Gaussian and augmented plane waves method", &
                                         "Gaussian and augmented plane waves method only for XC", &
                                         "Gaussian and plane waves method", &
@@ -447,11 +449,13 @@ CONTAINS
                                         "PNNL semiempirical", &
                                         "DFTB Density Functional based Tight-Binding", &
                                         "GFN-xTB Extended Tight-Binding", &
-                                        "OFGPW Orbital-free GPW method"), &
+                                        "OFGPW Orbital-free GPW method", &
+                                        "Resolution of identity DFT (Development version)"), &
                           enum_i_vals=(/do_method_gapw, do_method_gapw_xc, do_method_gpw, do_method_lrigpw, do_method_rigpw, &
                                         do_method_mndo, do_method_mndod, do_method_am1, do_method_pm3, &
                                         do_method_pm6, do_method_pm6fm, do_method_pdg, do_method_rm1, &
-                                        do_method_pnnl, do_method_dftb, do_method_xtb, do_method_ofgpw/), &
+                                        do_method_pnnl, do_method_dftb, do_method_xtb, do_method_ofgpw, &
+                                        do_method_ridft/), &
                           citations=(/Lippert1997, Lippert1999, Krack2000, VandeVondele2005a, &
                                       VandeVondele2006, Dewar1977, Dewar1985, Rocha2006, Stewart1989, Thiel1992, &
                                       Repasky2002, Stewart2007, VanVoorhis2015, Schenter2008/), &

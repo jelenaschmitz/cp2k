@@ -394,6 +394,7 @@ MODULE cp_control_types
       LOGICAL                              :: gapw = .FALSE., gapw_xc = .FALSE., gpw = .FALSE., pao = .FALSE.
       LOGICAL                              :: lrigpw = .FALSE., rigpw = .FALSE.
       LOGICAL                              :: lri_optbas = .FALSE.
+      LOGICAL                              :: ridft = .FALSE.
       LOGICAL                              :: ofgpw = .FALSE.
       LOGICAL                              :: dftb = .FALSE.
       LOGICAL                              :: xtb = .FALSE.
