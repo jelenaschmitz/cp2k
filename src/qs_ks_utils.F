@@ -1322,6 +1322,9 @@ CONTAINS
                       pw_env=pw_env, &
                       v_hartree_rspace=v_rspace, &
                       vee=vee)
+      IF (dft_control%qs_control%ridft) THEN
+         CALL pw_zero(v_rspace)
+      END IF
 
       CALL qs_rho_get(rho, rho_ao_kp=rho_ao_kp)
       CALL pw_env_get(pw_env, poisson_env=poisson_env, auxbas_pw_pool=auxbas_pw_pool)
